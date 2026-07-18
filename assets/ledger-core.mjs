@@ -100,6 +100,39 @@ export function filterLedgerTransactions(transactions, filters = {}) {
   });
 }
 
+export function calculateRunningBalances(transactions, options = {}) {
+  const openingBalanceByAccountId = options.openingBalanceByAccountId || {};
+  const accountBalances = new Map(
+    Object.entries(openingBalanceByAccountId).map(([accountId, amount]) => [
+      accountId,
+      roundMoney(toFiniteMoney(amount)),
+    ]),
+  );
+  const transactionBalances = new Map();
+
+  const orderedTransactions = transactions
+    .map((transaction, index) => ({
+      transaction,
+      index,
+      accountId: transaction.accountId || UNASSIGNED_ACCOUNT_ID,
+      amount: Number(transaction.amount),
+    }))
+    .filter((item) => Number.isFinite(item.amount))
+    .sort(compareTransactionsAscending);
+
+  for (const item of orderedTransactions) {
+    const previousBalance = accountBalances.get(item.accountId) || 0;
+    const nextBalance = roundMoney(previousBalance + item.amount);
+    accountBalances.set(item.accountId, nextBalance);
+
+    if (item.transaction.id) {
+      transactionBalances.set(item.transaction.id, nextBalance);
+    }
+  }
+
+  return { transactionBalances, accountBalances };
+}
+
 export function toCsv(transactions, options = {}) {
   const accountNameById = options.accountNameById || {};
   const rows = transactions.map((transaction) => {
@@ -124,6 +157,19 @@ export function toCsv(transactions, options = {}) {
 
 export function roundMoney(value) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+function compareTransactionsAscending(a, b) {
+  return (
+    String(a.transaction.date || "").localeCompare(String(b.transaction.date || "")) ||
+    String(a.transaction.createdAt || "").localeCompare(String(b.transaction.createdAt || "")) ||
+    a.index - b.index
+  );
+}
+
+function toFiniteMoney(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : 0;
 }
 
 function parseLine(line, fallbackYear) {

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   UNASSIGNED_ACCOUNT_ID,
+  calculateRunningBalances,
   filterLedgerTransactions,
   inferCategory,
   parseLedgerText,
@@ -123,6 +124,57 @@ test("filters transactions by selected months and unassigned account", () => {
   );
 
   assert.deepEqual(transactions, [{ date: "2026-07-01", amount: -10, category: "餐饮" }]);
+});
+
+test("calculates running balances by account from opening balances", () => {
+  const result = calculateRunningBalances(
+    [
+      {
+        id: "later",
+        date: "2026-07-03",
+        createdAt: "2026-07-03T09:00:00Z",
+        amount: 50,
+        accountId: "cmb",
+      },
+      {
+        id: "first",
+        date: "2026-07-01",
+        createdAt: "2026-07-01T09:00:00Z",
+        amount: -20,
+        accountId: "cmb",
+      },
+      {
+        id: "wechat",
+        date: "2026-07-02",
+        createdAt: "2026-07-02T09:00:00Z",
+        amount: -5,
+        accountId: "wechat",
+      },
+    ],
+    { openingBalanceByAccountId: { cmb: 100, wechat: 20 } },
+  );
+
+  assert.deepEqual(Object.fromEntries(result.transactionBalances), {
+    first: 80,
+    wechat: 15,
+    later: 130,
+  });
+  assert.deepEqual(Object.fromEntries(result.accountBalances), {
+    cmb: 130,
+    wechat: 15,
+  });
+});
+
+test("running balances include hidden earlier transactions", () => {
+  const result = calculateRunningBalances(
+    [
+      { id: "hidden-june", date: "2026-06-30", amount: 100, accountId: "cmb" },
+      { id: "visible-july", date: "2026-07-01", amount: -30, accountId: "cmb" },
+    ],
+    { openingBalanceByAccountId: { cmb: 10 } },
+  );
+
+  assert.equal(result.transactionBalances.get("visible-july"), 80);
 });
 
 test("exports csv with account names", () => {
