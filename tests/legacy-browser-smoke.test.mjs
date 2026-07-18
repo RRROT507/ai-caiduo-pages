@@ -87,6 +87,20 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
     await page.click("#entryForm button[type=submit]");
     assert.match(await page.locator("#transactionRows tr").first().textContent(), /¥967\.50/u);
 
+    await page.selectOption("#accountInput", savingsAccountValue);
+    await page.fill("#dateInput", "2026-07-02");
+    await page.selectOption("#directionInput", "income");
+    await page.fill("#amountInput", "10.00");
+    await page.fill("#descriptionInput", "同日退款");
+    await page.click("#entryForm button[type=submit]");
+    const sameDayRows = await page.locator("#transactionRows tr").allTextContents();
+    assert.match(sameDayRows[0], /同日退款/u);
+    assert.match(sameDayRows[0], /\+¥10\.00/u);
+    assert.match(sameDayRows[0], /¥977\.50/u);
+    assert.match(sameDayRows[1], /星巴克咖啡/u);
+    assert.match(sameDayRows[1], /-¥32\.50/u);
+    assert.match(sameDayRows[1], /¥967\.50/u);
+
     await page.selectOption("#accountInput", "wechat");
     await page.fill("#dateInput", "2026-08-03");
     await page.selectOption("#directionInput", "income");
@@ -96,8 +110,8 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
 
     await page.fill("#endMonthInput", "2026-08");
     await page.dispatchEvent("#endMonthInput", "change");
-    assert.equal(await page.locator("#transactionRows tr").count(), 2);
-    assert.equal(await page.locator("#transactionCount").textContent(), "2");
+    assert.equal(await page.locator("#transactionRows tr").count(), 3);
+    assert.equal(await page.locator("#transactionCount").textContent(), "3");
 
     await page.selectOption("#accountFilterInput", "wechat");
     assert.equal(await page.locator("#transactionRows tr").count(), 1);
@@ -120,10 +134,10 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
     assert.equal(errors.join(" | "), "");
     assert.ok((await page.locator("#categoryInput option").count()) > 0);
     assert.equal(await page.locator("#pendingRows tr").count(), 4);
-    assert.equal(await page.locator("#transactionRows tr").count(), 2);
+    assert.equal(await page.locator("#transactionRows tr").count(), 3);
     await page.click("#confirmImportButton");
     await page.waitForTimeout(300);
-    assert.equal(await page.locator("#transactionRows tr").count(), 6);
+    assert.equal(await page.locator("#transactionRows tr").count(), 7);
 
     await page.selectOption("#importAccountInput", "alipay");
     await page.setInputFiles("#fileInput", {

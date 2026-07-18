@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   UNASSIGNED_ACCOUNT_ID,
   calculateRunningBalances,
+  compareLedgerTransactionsDescending,
   filterLedgerTransactions,
   inferCategory,
   parseLedgerText,
@@ -217,6 +218,35 @@ test("running balances include hidden earlier transactions", () => {
   );
 
   assert.equal(result.transactionBalances.get("visible-july"), 80);
+});
+
+test("orders same-day running balances by transaction sequence", () => {
+  const transactions = [
+    { id: "first", date: "2026-07-01", amount: -32.5, accountId: "cmb", sequence: 1 },
+    { id: "second", date: "2026-07-01", amount: 10, accountId: "cmb", sequence: 2 },
+    { id: "third", date: "2026-07-01", amount: -5, accountId: "cmb", sequence: 3 },
+  ];
+  const result = calculateRunningBalances(transactions, {
+    openingBalanceByAccountId: { cmb: 100 },
+  });
+  const newestFirst = [...transactions].sort(compareLedgerTransactionsDescending);
+
+  assert.deepEqual(newestFirst.map((transaction) => transaction.id), [
+    "third",
+    "second",
+    "first",
+  ]);
+  assert.equal(result.transactionBalances.get("first"), 67.5);
+  assert.equal(result.transactionBalances.get("second"), 77.5);
+  assert.equal(result.transactionBalances.get("third"), 72.5);
+  assert.equal(
+    result.transactionBalances.get("second") + newestFirst[0].amount,
+    result.transactionBalances.get("third"),
+  );
+  assert.equal(
+    result.transactionBalances.get("first") + newestFirst[1].amount,
+    result.transactionBalances.get("second"),
+  );
 });
 
 test("exports csv with account names", () => {

@@ -3,6 +3,7 @@ import {
   UNASSIGNED_ACCOUNT_ID,
   UNASSIGNED_ACCOUNT_NAME,
   calculateRunningBalances,
+  compareLedgerTransactionsDescending,
   filterLedgerTransactions,
   inferCategory,
   roundMoney,
@@ -279,8 +280,9 @@ function confirmPendingImport() {
   }
 
   const importAccountId = normalizeAccountId(elements.importAccountInput.value);
-  const imported = state.pendingTransactions.map(({ previewId, ...transaction }) =>
-    withId({ ...transaction, accountId: importAccountId }),
+  const baseSequence = getMaxTransactionSequence();
+  const imported = state.pendingTransactions.map(({ previewId, ...transaction }, index) =>
+    withId({ ...transaction, accountId: importAccountId }, baseSequence + index + 1),
   );
   state.transactions = [...imported, ...state.transactions];
   state.pendingTransactions = [];
@@ -758,19 +760,27 @@ function getVisibleTransactions() {
       (transaction) =>
         state.categoryFilter === "all" || transaction.category === state.categoryFilter,
     )
-    .sort(
-      (a, b) =>
-        b.date.localeCompare(a.date) ||
-        String(b.createdAt || "").localeCompare(String(a.createdAt || "")),
-    );
+    .sort(compareLedgerTransactionsDescending);
 }
 
-function withId(transaction) {
+function withId(transaction, sequence = getNextTransactionSequence()) {
   return {
     id: createId(),
     createdAt: new Date().toISOString(),
+    sequence,
     ...transaction,
   };
+}
+
+function getNextTransactionSequence() {
+  return getMaxTransactionSequence() + 1;
+}
+
+function getMaxTransactionSequence() {
+  return state.transactions.reduce((max, transaction) => {
+    const sequence = Number(transaction.sequence);
+    return Number.isFinite(sequence) ? Math.max(max, sequence) : max;
+  }, 0);
 }
 
 function replaceChildrenCompat(parent, ...children) {

@@ -134,6 +134,10 @@ export function calculateRunningBalances(transactions, options = {}) {
   return { transactionBalances, accountBalances };
 }
 
+export function compareLedgerTransactionsDescending(a, b) {
+  return compareTransactionValues(b, a);
+}
+
 export function toCsv(transactions, options = {}) {
   const accountNameById = options.accountNameById || {};
   const rows = transactions.map((transaction) => {
@@ -162,10 +166,22 @@ export function roundMoney(value) {
 
 function compareTransactionsAscending(a, b) {
   return (
-    String(a.transaction.date || "").localeCompare(String(b.transaction.date || "")) ||
-    String(a.transaction.createdAt || "").localeCompare(String(b.transaction.createdAt || "")) ||
+    compareTransactionValues(a.transaction, b.transaction) ||
     a.index - b.index
   );
+}
+
+function compareTransactionValues(a, b) {
+  return (
+    String(a.date || "").localeCompare(String(b.date || "")) ||
+    getTransactionSequence(a) - getTransactionSequence(b) ||
+    String(a.createdAt || "").localeCompare(String(b.createdAt || ""))
+  );
+}
+
+function getTransactionSequence(transaction) {
+  const sequence = Number(transaction.sequence);
+  return Number.isFinite(sequence) ? sequence : 0;
 }
 
 function toFiniteMoney(value) {
