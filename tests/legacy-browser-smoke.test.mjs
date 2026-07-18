@@ -111,6 +111,24 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
     await page.click("#confirmImportButton");
     await page.waitForTimeout(300);
     assert.equal(await page.locator("#transactionRows tr").count(), 6);
+
+    await page.selectOption("#importAccountInput", "alipay");
+    await page.setInputFiles("#fileInput", {
+      name: "alipay-statement.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("2026-07-05 支付宝-高德打车 -10.30"),
+    });
+    await page.click("#importButton");
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator("#pendingRows tr").count(), 1);
+    await page.click("#confirmImportButton");
+    await page.waitForTimeout(300);
+
+    await page.check('[data-account-filter-id="alipay"]');
+    const alipayRows = await page.locator("#transactionRows tr").allTextContents();
+    assert.equal(alipayRows.length, 1);
+    assert.match(alipayRows[0], /支付宝/u);
+    assert.match(alipayRows[0], /高德打车/u);
   } finally {
     await browser.close();
     await server.close();

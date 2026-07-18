@@ -284,8 +284,9 @@ function confirmPendingImport() {
     return;
   }
 
+  const importAccountId = normalizeAccountId(elements.importAccountInput.value);
   const imported = state.pendingTransactions.map(({ previewId, ...transaction }) =>
-    withId(transaction),
+    withId({ ...transaction, accountId: importAccountId }),
   );
   state.transactions = [...imported, ...state.transactions];
   state.pendingTransactions = [];
