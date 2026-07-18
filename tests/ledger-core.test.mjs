@@ -249,6 +249,38 @@ test("orders same-day running balances by transaction sequence", () => {
   );
 });
 
+test("orders same-day balances by creation time before sequence across batches", () => {
+  const transactions = [
+    {
+      id: "older-batch",
+      date: "2026-07-01",
+      createdAt: "2026-07-01T09:00:00Z",
+      amount: -5,
+      accountId: "cmb",
+      sequence: 100,
+    },
+    {
+      id: "newer-batch",
+      date: "2026-07-01",
+      createdAt: "2026-07-02T09:00:00Z",
+      amount: 10,
+      accountId: "cmb",
+      sequence: 1,
+    },
+  ];
+  const result = calculateRunningBalances(transactions, {
+    openingBalanceByAccountId: { cmb: 100 },
+  });
+  const newestFirst = [...transactions].sort(compareLedgerTransactionsDescending);
+
+  assert.deepEqual(newestFirst.map((transaction) => transaction.id), [
+    "newer-batch",
+    "older-batch",
+  ]);
+  assert.equal(result.transactionBalances.get("older-batch"), 95);
+  assert.equal(result.transactionBalances.get("newer-batch"), 105);
+});
+
 test("exports csv with account names", () => {
   const csv = toCsv(
     [

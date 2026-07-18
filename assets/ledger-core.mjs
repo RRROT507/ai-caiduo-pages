@@ -174,8 +174,8 @@ function compareTransactionsAscending(a, b) {
 function compareTransactionValues(a, b) {
   return (
     String(a.date || "").localeCompare(String(b.date || "")) ||
-    getTransactionSequence(a) - getTransactionSequence(b) ||
-    String(a.createdAt || "").localeCompare(String(b.createdAt || ""))
+    String(a.createdAt || "").localeCompare(String(b.createdAt || "")) ||
+    getTransactionSequence(a) - getTransactionSequence(b)
   );
 }
 

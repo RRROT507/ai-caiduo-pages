@@ -813,10 +813,26 @@ function loadTransactions() {
       return [];
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(isValidTransaction) : [];
+    return Array.isArray(parsed) ? ensureTransactionSequences(parsed.filter(isValidTransaction)) : [];
   } catch {
     return [];
   }
+}
+
+function ensureTransactionSequences(transactions) {
+  let maxSequence = transactions.reduce((max, transaction) => {
+    const sequence = Number(transaction.sequence);
+    return Number.isFinite(sequence) ? Math.max(max, sequence) : max;
+  }, 0);
+
+  return transactions.map((transaction) => {
+    if (Number.isFinite(Number(transaction.sequence))) {
+      return transaction;
+    }
+
+    maxSequence += 1;
+    return { ...transaction, sequence: maxSequence };
+  });
 }
 
 function loadAccounts() {
