@@ -66,6 +66,33 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
     );
 
     await page.fill("#monthInput", "2026-07");
+    await page.dispatchEvent("#monthInput", "change");
+
+    await page.selectOption("#accountInput", "cmb-credit-card");
+    await page.fill("#dateInput", "2026-07-02");
+    await page.selectOption("#directionInput", "expense");
+    await page.fill("#amountInput", "32.50");
+    await page.fill("#descriptionInput", "星巴克咖啡");
+    await page.click("#entryForm button[type=submit]");
+
+    await page.selectOption("#accountInput", "wechat");
+    await page.fill("#dateInput", "2026-08-03");
+    await page.selectOption("#directionInput", "income");
+    await page.fill("#amountInput", "12000");
+    await page.fill("#descriptionInput", "工资入账");
+    await page.click("#entryForm button[type=submit]");
+
+    await page.check('[data-month-filter="2026-08"]');
+    assert.equal(await page.locator("#transactionRows tr").count(), 2);
+    assert.equal(await page.locator("#transactionCount").textContent(), "2");
+
+    await page.check('[data-account-filter-id="wechat"]');
+    assert.equal(await page.locator("#transactionRows tr").count(), 1);
+    assert.ok(await page.locator("#transactionRows").getByText("微信").isVisible());
+    assert.equal(await page.locator("#transactionCount").textContent(), "1");
+
+    await page.check('[data-account-filter-id="all"]');
+
     await page.setInputFiles("#fileInput", {
       name: "cmb-statement.txt",
       mimeType: "text/plain",
@@ -80,10 +107,10 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
     assert.equal(errors.join(" | "), "");
     assert.ok((await page.locator("#categoryInput option").count()) > 0);
     assert.equal(await page.locator("#pendingRows tr").count(), 4);
-    assert.equal(await page.locator("#transactionRows tr").count(), 0);
+    assert.equal(await page.locator("#transactionRows tr").count(), 2);
     await page.click("#confirmImportButton");
     await page.waitForTimeout(300);
-    assert.equal(await page.locator("#transactionRows tr").count(), 4);
+    assert.equal(await page.locator("#transactionRows tr").count(), 6);
   } finally {
     await browser.close();
     await server.close();

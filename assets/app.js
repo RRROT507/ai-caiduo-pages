@@ -2,8 +2,9 @@ import { analyzeLedgerFile } from "./ledger-importer.mjs";
 import {
   UNASSIGNED_ACCOUNT_ID,
   UNASSIGNED_ACCOUNT_NAME,
+  filterLedgerTransactions,
   inferCategory,
-  summarizeMonth,
+  summarizeSelection,
   toCsv,
 } from "./ledger-core.mjs";
 
@@ -30,6 +31,8 @@ const state = {
 
 const elements = {
   monthInput: document.querySelector("#monthInput"),
+  monthFilterList: document.querySelector("#monthFilterList"),
+  accountFilterList: document.querySelector("#accountFilterList"),
   incomeTotal: document.querySelector("#incomeTotal"),
   expenseTotal: document.querySelector("#expenseTotal"),
   balanceTotal: document.querySelector("#balanceTotal"),
@@ -78,7 +81,11 @@ function init() {
 
 function bindEvents() {
   elements.monthInput.addEventListener("change", () => {
-    state.month = elements.monthInput.value || getCurrentMonth();
+    const month = elements.monthInput.value || getCurrentMonth();
+    state.month = month;
+    if (!state.selectedMonths.includes(month)) {
+      state.selectedMonths = [...state.selectedMonths, month].sort();
+    }
     render();
   });
 
@@ -162,6 +169,24 @@ function bindEvents() {
     deleteTransaction(button.dataset.deleteId);
   });
 
+  elements.monthFilterList.addEventListener("change", (event) => {
+    const input = event.target.closest("[data-month-filter]");
+    if (!input) {
+      return;
+    }
+
+    updateSelectedMonths(input.dataset.monthFilter, input.checked);
+  });
+
+  elements.accountFilterList.addEventListener("change", (event) => {
+    const input = event.target.closest("[data-account-filter-id]");
+    if (!input) {
+      return;
+    }
+
+    updateSelectedAccounts(input.dataset.accountFilterId, input.checked);
+  });
+
   elements.accountForm.addEventListener("submit", (event) => {
     event.preventDefault();
     addAccount();
@@ -202,6 +227,7 @@ function addManualTransaction() {
     amount: direction === "expense" ? -amount : amount,
     direction,
     category,
+    accountId: normalizeAccountId(elements.accountInput.value),
     source: "manual",
   });
 
@@ -210,6 +236,7 @@ function addManualTransaction() {
   elements.entryForm.reset();
   elements.dateInput.value = getToday();
   elements.directionInput.value = "expense";
+  elements.accountInput.value = getDefaultAccountId();
   elements.categoryInput.value = inferCategory("");
   render();
 }
@@ -293,12 +320,14 @@ function exportTransactions() {
     return;
   }
 
-  const csv = toCsv(transactions);
+  const csv = toCsv(transactions, { accountNameById: getAccountNameById() });
+  const monthSuffix =
+    state.selectedMonths.length === 1 ? state.selectedMonths[0] : state.selectedMonths.join("_");
   const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `AI财舵-${state.month}.csv`;
+  link.download = `AI财舵-${monthSuffix}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -320,6 +349,30 @@ function clearTransactions() {
 function deleteTransaction(id) {
   state.transactions = state.transactions.filter((transaction) => transaction.id !== id);
   persist();
+  render();
+}
+
+function updateSelectedMonths(month, isSelected) {
+  state.selectedMonths = isSelected
+    ? [...new Set([...state.selectedMonths, month])].sort()
+    : state.selectedMonths.filter((selectedMonth) => selectedMonth !== month);
+
+  if (state.selectedMonths.length === 0) {
+    state.selectedMonths = [getCurrentMonth()];
+  }
+  render();
+}
+
+function updateSelectedAccounts(accountId, isSelected) {
+  if (accountId === "all") {
+    state.selectedAccountIds = [];
+    render();
+    return;
+  }
+
+  state.selectedAccountIds = isSelected
+    ? [...new Set([...state.selectedAccountIds, accountId])]
+    : state.selectedAccountIds.filter((selectedId) => selectedId !== accountId);
   render();
 }
 
@@ -369,12 +422,18 @@ function deleteAccount(id) {
   const account = state.accounts.find((item) => item.id === id);
   state.accounts = state.accounts.filter((item) => item.id !== id);
   state.selectedAccountIds = state.selectedAccountIds.filter((accountId) => accountId !== id);
+  state.transactions = state.transactions.map((transaction) =>
+    transaction.accountId === id ? { ...transaction, accountId: undefined } : transaction,
+  );
+  persist();
   persistAccounts();
   setAccountStatus(account ? `已删除 ${account.name}` : "");
   render();
 }
 
 function render() {
+  renderMonthFilters();
+  renderAccountFilters();
   renderSummary();
   renderAccountOptions();
   renderAccountList();
@@ -384,7 +443,10 @@ function render() {
 }
 
 function renderSummary() {
-  const summary = summarizeMonth(state.transactions, state.month);
+  const summary = summarizeSelection(state.transactions, {
+    months: state.selectedMonths,
+    accountIds: state.selectedAccountIds,
+  });
   elements.incomeTotal.textContent = formatMoney(summary.income);
   elements.expenseTotal.textContent = formatMoney(summary.expense);
   elements.balanceTotal.textContent = formatMoney(summary.balance);
@@ -405,9 +467,10 @@ function renderCategoryFilter() {
   const categories = [
     "all",
     ...new Set(
-      state.transactions
-        .filter((transaction) => transaction.date.startsWith(`${state.month}-`))
-        .map((transaction) => transaction.category),
+      filterLedgerTransactions(state.transactions, {
+        months: state.selectedMonths,
+        accountIds: state.selectedAccountIds,
+      }).map((transaction) => transaction.category),
     ),
   ];
 
@@ -488,6 +551,48 @@ function renderAccountList() {
   );
 }
 
+function renderMonthFilters() {
+  replaceChildrenCompat(
+    elements.monthFilterList,
+    ...getAvailableMonths().map((month) => {
+      const label = document.createElement("label");
+      label.className = "check-pill";
+      label.innerHTML = `
+        <input type="checkbox" data-month-filter="${escapeHtml(month)}" ${
+          state.selectedMonths.includes(month) ? "checked" : ""
+        } />
+        <span>${escapeHtml(month)}</span>
+      `;
+      return label;
+    }),
+  );
+}
+
+function renderAccountFilters() {
+  const allLabel = document.createElement("label");
+  allLabel.className = "check-pill";
+  allLabel.innerHTML = `
+    <input type="checkbox" data-account-filter-id="all" ${
+      state.selectedAccountIds.length === 0 ? "checked" : ""
+    } />
+    <span>全部账户</span>
+  `;
+
+  const accountLabels = getVisibleAccountIds().map((accountId) => {
+    const label = document.createElement("label");
+    label.className = "check-pill";
+    label.innerHTML = `
+      <input type="checkbox" data-account-filter-id="${escapeHtml(accountId)}" ${
+        state.selectedAccountIds.includes(accountId) ? "checked" : ""
+      } />
+      <span>${escapeHtml(getAccountName(accountId))}</span>
+    `;
+    return label;
+  });
+
+  replaceChildrenCompat(elements.accountFilterList, allLabel, ...accountLabels);
+}
+
 function createOption(value, label) {
   const option = document.createElement("option");
   option.value = value;
@@ -499,6 +604,32 @@ function getDefaultAccountId() {
   return state.accounts.some((account) => account.id === "cmb-credit-card")
     ? "cmb-credit-card"
     : state.accounts[0]?.id || UNASSIGNED_ACCOUNT_ID;
+}
+
+function getAccountName(accountId) {
+  return (
+    state.accounts.find((account) => account.id === accountId)?.name || UNASSIGNED_ACCOUNT_NAME
+  );
+}
+
+function getAccountNameById() {
+  return Object.fromEntries(state.accounts.map((account) => [account.id, account.name]));
+}
+
+function getAvailableMonths() {
+  return [
+    ...new Set([
+      getCurrentMonth(),
+      ...state.selectedMonths,
+      ...state.transactions.map((transaction) => String(transaction.date || "").slice(0, 7)),
+    ]),
+  ]
+    .filter((month) => /^\d{4}-\d{2}$/u.test(month))
+    .sort();
+}
+
+function getVisibleAccountIds() {
+  return [UNASSIGNED_ACCOUNT_ID, ...state.accounts.map((account) => account.id)];
 }
 
 function createCategoryBar(item, maxAmount) {
@@ -528,6 +659,7 @@ function createTransactionRow(transaction) {
   const isIncome = transaction.direction === "income";
   row.innerHTML = `
     <td data-label="日期">${escapeHtml(transaction.date)}</td>
+    <td data-label="账户">${escapeHtml(getAccountName(transaction.accountId))}</td>
     <td data-label="说明">${escapeHtml(transaction.description)}</td>
     <td data-label="分类"><span class="tag">${escapeHtml(transaction.category)}</span></td>
     <td data-label="类型">${isIncome ? "收入" : "支出"}</td>
@@ -574,13 +706,19 @@ function createPendingRow(transaction) {
 }
 
 function getVisibleTransactions() {
-  return state.transactions
-    .filter((transaction) => transaction.date.startsWith(`${state.month}-`))
+  return filterLedgerTransactions(state.transactions, {
+    months: state.selectedMonths,
+    accountIds: state.selectedAccountIds,
+  })
     .filter(
       (transaction) =>
         state.categoryFilter === "all" || transaction.category === state.categoryFilter,
     )
-    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+    .sort(
+      (a, b) =>
+        b.date.localeCompare(a.date) ||
+        String(b.createdAt || "").localeCompare(String(a.createdAt || "")),
+    );
 }
 
 function withId(transaction) {
@@ -682,6 +820,10 @@ function setImportStatus(message) {
 
 function setAccountStatus(message) {
   elements.accountStatus.textContent = message;
+}
+
+function normalizeAccountId(accountId) {
+  return accountId && accountId !== UNASSIGNED_ACCOUNT_ID ? accountId : undefined;
 }
 
 function getAiImportEndpoint() {

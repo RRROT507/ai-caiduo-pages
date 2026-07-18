@@ -38,9 +38,20 @@
             <h2 id="overview-title">现金流看板</h2>
           </div>
           <label class="month-control">
-            <span>月份</span>
+            <span>添加月份</span>
             <input id="monthInput" type="month" />
           </label>
+        </div>
+
+        <div class="dashboard-filters" aria-label="看板筛选">
+          <fieldset class="filter-group">
+            <legend>月份</legend>
+            <div id="monthFilterList" class="checklist" aria-label="筛选月份"></div>
+          </fieldset>
+          <fieldset class="filter-group">
+            <legend>账户</legend>
+            <div id="accountFilterList" class="checklist" aria-label="筛选账户"></div>
+          </fieldset>
         </div>
 
         <div class="metric-grid">
@@ -236,6 +247,7 @@
             <thead>
               <tr>
                 <th>日期</th>
+                <th>账户</th>
                 <th>说明</th>
                 <th>分类</th>
                 <th>类型</th>
