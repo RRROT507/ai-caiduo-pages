@@ -409,7 +409,7 @@ textarea {
 
 .account-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(128px, 180px) auto;
   gap: 10px;
   align-items: end;
 }
@@ -430,9 +430,32 @@ textarea {
 
 .account-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1.2fr) minmax(128px, 0.7fr) minmax(112px, 0.6fr) auto;
   gap: 10px;
+  align-items: end;
+}
+
+.account-row-field,
+.account-balance {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.account-row-field span,
+.account-balance span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.account-balance strong {
+  min-height: 44px;
+  display: flex;
   align-items: center;
+  color: var(--text);
+  font-size: 14px;
+  white-space: nowrap;
 }
 
 .action-row {

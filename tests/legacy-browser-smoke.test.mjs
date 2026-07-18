@@ -49,6 +49,7 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
     await page.reload({ waitUntil: "domcontentloaded" });
 
     await page.fill("#accountNameInput", "储蓄卡");
+    await page.fill("#accountOpeningBalanceInput", "1000");
     await page.click("#accountForm button[type=submit]");
     await page.waitForTimeout(100);
 
@@ -64,6 +65,7 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
       await page.locator("#importAccountInput option").filter({ hasText: "储蓄卡" }).count(),
       1,
     );
+    assert.equal(await page.locator("#accountList input[data-account-opening-id]").count(), 5);
 
     assert.equal(await page.locator("#monthFilterList").count(), 0);
     assert.equal(await page.locator("#accountFilterList").count(), 0);
@@ -73,12 +75,17 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
     await page.dispatchEvent("#endMonthInput", "change");
     await page.selectOption("#accountFilterInput", "all");
 
-    await page.selectOption("#accountInput", "cmb-credit-card");
+    const savingsAccountValue = await page
+      .locator("#accountInput option")
+      .filter({ hasText: "储蓄卡" })
+      .getAttribute("value");
+    await page.selectOption("#accountInput", savingsAccountValue);
     await page.fill("#dateInput", "2026-07-02");
     await page.selectOption("#directionInput", "expense");
     await page.fill("#amountInput", "32.50");
     await page.fill("#descriptionInput", "星巴克咖啡");
     await page.click("#entryForm button[type=submit]");
+    assert.match(await page.locator("#transactionRows tr").first().textContent(), /¥967\.50/u);
 
     await page.selectOption("#accountInput", "wechat");
     await page.fill("#dateInput", "2026-08-03");

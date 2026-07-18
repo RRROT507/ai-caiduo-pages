@@ -2,8 +2,10 @@ import { analyzeLedgerFile } from "./ledger-importer.mjs";
 import {
   UNASSIGNED_ACCOUNT_ID,
   UNASSIGNED_ACCOUNT_NAME,
+  calculateRunningBalances,
   filterLedgerTransactions,
   inferCategory,
+  roundMoney,
   summarizeSelection,
   toCsv,
 } from "./ledger-core.mjs";
@@ -11,10 +13,10 @@ import {
 const STORAGE_KEY = "ai-caiduo-transactions-v1";
 const ACCOUNTS_STORAGE_KEY = "ai-caiduo-accounts-v1";
 const DEFAULT_ACCOUNTS = [
-  { id: "cmb-credit-card", name: "招商信用卡" },
-  { id: "wechat", name: "微信" },
-  { id: "alipay", name: "支付宝" },
-  { id: "cash", name: "现金" },
+  { id: "cmb-credit-card", name: "招商信用卡", openingBalance: 0 },
+  { id: "wechat", name: "微信", openingBalance: 0 },
+  { id: "alipay", name: "支付宝", openingBalance: 0 },
+  { id: "cash", name: "现金", openingBalance: 0 },
 ];
 const CATEGORIES = ["餐饮", "交通", "购物", "居家", "医疗", "娱乐", "学习", "收入", "其他"];
 
@@ -61,6 +63,7 @@ const elements = {
   clearButton: document.querySelector("#clearButton"),
   accountForm: document.querySelector("#accountForm"),
   accountNameInput: document.querySelector("#accountNameInput"),
+  accountOpeningBalanceInput: document.querySelector("#accountOpeningBalanceInput"),
   accountStatus: document.querySelector("#accountStatus"),
   accountList: document.querySelector("#accountList"),
   emptyState: document.querySelector("#emptyState"),
@@ -180,12 +183,16 @@ function bindEvents() {
   });
 
   elements.accountList.addEventListener("change", (event) => {
-    const input = event.target.closest("[data-account-name-id]");
-    if (!input) {
+    const nameInput = event.target.closest("[data-account-name-id]");
+    if (nameInput) {
+      renameAccount(nameInput.dataset.accountNameId, nameInput.value);
       return;
     }
 
-    renameAccount(input.dataset.accountNameId, input.value);
+    const openingInput = event.target.closest("[data-account-opening-id]");
+    if (openingInput) {
+      updateAccountOpeningBalance(openingInput.dataset.accountOpeningId, openingInput.value);
+    }
   });
 
   elements.accountList.addEventListener("click", (event) => {
@@ -348,6 +355,7 @@ function setMonthRange(startMonth, endMonth) {
 
 function addAccount() {
   const name = elements.accountNameInput.value.trim();
+  const openingBalance = parseMoneyInput(elements.accountOpeningBalanceInput.value);
   if (!name) {
     setAccountStatus("请输入账户名称");
     return;
@@ -359,9 +367,10 @@ function addAccount() {
 
   state.accounts = [
     ...state.accounts,
-    { id: createId(), name, createdAt: new Date().toISOString() },
+    { id: createId(), name, openingBalance, createdAt: new Date().toISOString() },
   ];
   elements.accountNameInput.value = "";
+  elements.accountOpeningBalanceInput.value = "";
   persistAccounts();
   setAccountStatus(`已添加 ${name}`);
   render();
@@ -385,6 +394,21 @@ function renameAccount(id, nextName) {
   );
   persistAccounts();
   setAccountStatus(`已更新 ${name}`);
+  render();
+}
+
+function updateAccountOpeningBalance(id, nextValue) {
+  const account = state.accounts.find((item) => item.id === id);
+  if (!account) {
+    return;
+  }
+
+  const openingBalance = parseMoneyInput(nextValue);
+  state.accounts = state.accounts.map((item) =>
+    item.id === id ? { ...item, openingBalance } : item,
+  );
+  persistAccounts();
+  setAccountStatus(`已更新 ${account.name} 初始金额`);
   render();
 }
 
@@ -461,8 +485,14 @@ function renderCategoryFilter() {
 
 function renderTransactions() {
   const transactions = getVisibleTransactions();
+  const { transactionBalances } = getRunningBalanceSnapshot();
   elements.emptyState.classList.toggle("is-hidden", transactions.length > 0);
-  replaceChildrenCompat(elements.transactionRows, ...transactions.map(createTransactionRow));
+  replaceChildrenCompat(
+    elements.transactionRows,
+    ...transactions.map((transaction) =>
+      createTransactionRow(transaction, transactionBalances.get(transaction.id)),
+    ),
+  );
 }
 
 function renderPendingImport() {
@@ -504,15 +534,38 @@ function renderAccountSelect(select, selectedValue) {
 }
 
 function renderAccountList() {
+  const { accountBalances } = getRunningBalanceSnapshot();
   replaceChildrenCompat(
     elements.accountList,
     ...state.accounts.map((account) => {
       const row = document.createElement("div");
       row.className = "account-row";
+      const openingBalance = getAccountOpeningBalance(account);
+      const currentBalance = accountBalances.has(account.id)
+        ? accountBalances.get(account.id)
+        : openingBalance;
       row.innerHTML = `
-        <input data-account-name-id="${escapeHtml(account.id)}" value="${escapeHtml(
-          account.name,
-        )}" aria-label="账户名称" />
+        <label class="account-row-field account-name-field">
+          <span>账户名称</span>
+          <input data-account-name-id="${escapeHtml(account.id)}" value="${escapeHtml(
+            account.name,
+          )}" aria-label="账户名称" />
+        </label>
+        <label class="account-row-field">
+          <span>初始金额</span>
+          <input
+            data-account-opening-id="${escapeHtml(account.id)}"
+            value="${escapeHtml(formatMoneyInput(openingBalance))}"
+            type="number"
+            step="0.01"
+            inputmode="decimal"
+            aria-label="初始金额"
+          />
+        </label>
+        <span class="account-balance">
+          <span>当前余额</span>
+          <strong>${escapeHtml(formatMoney(currentBalance))}</strong>
+        </span>
         <button class="delete-button" type="button" data-delete-account-id="${escapeHtml(
           account.id,
         )}">删除</button>
@@ -564,6 +617,22 @@ function getAccountName(accountId) {
 
 function getAccountNameById() {
   return Object.fromEntries(state.accounts.map((account) => [account.id, account.name]));
+}
+
+function getAccountOpeningBalanceById() {
+  return Object.fromEntries(
+    state.accounts.map((account) => [account.id, getAccountOpeningBalance(account)]),
+  );
+}
+
+function getAccountOpeningBalance(account) {
+  return parseMoneyInput(account?.openingBalance);
+}
+
+function getRunningBalanceSnapshot() {
+  return calculateRunningBalances(state.transactions, {
+    openingBalanceByAccountId: getAccountOpeningBalanceById(),
+  });
 }
 
 function getSelectedMonths() {
@@ -628,7 +697,7 @@ function createCategoryBar(item, maxAmount) {
   return row;
 }
 
-function createTransactionRow(transaction) {
+function createTransactionRow(transaction, accountBalance = 0) {
   const row = document.createElement("tr");
   const isIncome = transaction.direction === "income";
   row.innerHTML = `
@@ -640,6 +709,7 @@ function createTransactionRow(transaction) {
     <td data-label="金额" class="amount-cell ${isIncome ? "income-text" : "expense-text"}">${escapeHtml(
       formatSignedMoney(transaction.amount),
     )}</td>
+    <td data-label="账户余额" class="amount-cell">${escapeHtml(formatMoney(accountBalance || 0))}</td>
     <td data-label="操作" class="action-cell">
       <button class="delete-button" type="button" data-delete-id="${escapeHtml(
         transaction.id,
@@ -746,7 +816,7 @@ function loadAccounts() {
       return createDefaultAccounts();
     }
     const parsed = JSON.parse(raw);
-    const accounts = Array.isArray(parsed) ? parsed.filter(isValidAccount) : [];
+    const accounts = Array.isArray(parsed) ? parsed.map(normalizeAccount).filter(Boolean) : [];
     return accounts.length > 0 ? accounts : [];
   } catch {
     return createDefaultAccounts();
@@ -756,6 +826,7 @@ function loadAccounts() {
 function createDefaultAccounts() {
   return DEFAULT_ACCOUNTS.map((account) => ({
     ...account,
+    openingBalance: getAccountOpeningBalance(account),
     createdAt: new Date().toISOString(),
   }));
 }
@@ -766,6 +837,18 @@ function persistAccounts() {
 
 function isValidAccount(account) {
   return Boolean(account && account.id && String(account.name || "").trim());
+}
+
+function normalizeAccount(account) {
+  if (!isValidAccount(account)) {
+    return null;
+  }
+
+  return {
+    ...account,
+    name: String(account.name).trim(),
+    openingBalance: parseMoneyInput(account.openingBalance),
+  };
 }
 
 function persist() {
@@ -800,6 +883,11 @@ function normalizeAccountId(accountId) {
   return accountId && accountId !== UNASSIGNED_ACCOUNT_ID ? accountId : undefined;
 }
 
+function parseMoneyInput(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? roundMoney(amount) : 0;
+}
+
 function getAiImportEndpoint() {
   const globalEndpoint = globalThis.AI_CAIDUO_IMPORT_ENDPOINT;
   if (typeof globalEndpoint === "string" && globalEndpoint.trim()) {
@@ -819,6 +907,11 @@ function formatMoney(amount) {
 function formatSignedMoney(amount) {
   const value = formatMoney(Math.abs(amount));
   return Number(amount) >= 0 ? `+${value}` : `-${value}`;
+}
+
+function formatMoneyInput(amount) {
+  const value = parseMoneyInput(amount);
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
 function getCurrentMonth() {

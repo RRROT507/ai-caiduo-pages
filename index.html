@@ -219,6 +219,17 @@
               placeholder="例如：储蓄卡"
             />
           </label>
+          <label>
+            <span>初始金额</span>
+            <input
+              id="accountOpeningBalanceInput"
+              name="accountOpeningBalance"
+              type="number"
+              step="0.01"
+              inputmode="decimal"
+              placeholder="0.00"
+            />
+          </label>
           <button class="primary-button" type="submit">添加</button>
         </form>
 
@@ -252,6 +263,7 @@
                 <th>分类</th>
                 <th>类型</th>
                 <th class="amount-cell">金额</th>
+                <th class="amount-cell">账户余额</th>
                 <th class="action-cell">操作</th>
               </tr>
             </thead>
