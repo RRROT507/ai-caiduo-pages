@@ -8,6 +8,9 @@ const CATEGORY_RULES = [
   ["学习", /课程|书|教育|培训|知识|考试/u],
 ];
 
+export const UNASSIGNED_ACCOUNT_ID = "__unassigned__";
+export const UNASSIGNED_ACCOUNT_NAME = "未指定账户";
+
 const INCOME_PATTERN = /收入|入账|工资|奖金|退款|转入|报销|利息/u;
 const EXPENSE_PATTERN = /支出|消费|付款|扣款|转出|支付|还款/u;
 const SKIP_PATTERN = /交易日期|记账日期|摘要|金额|余额|本页|小计|合计|总计|币种/u;
@@ -36,23 +39,25 @@ export function parseLedgerText(text, options = {}) {
 }
 
 export function summarizeMonth(transactions, monthKey) {
-  const monthTransactions = transactions.filter((transaction) =>
-    String(transaction.date || "").startsWith(`${monthKey}-`),
-  );
+  return summarizeSelection(transactions, { months: [monthKey] });
+}
+
+export function summarizeSelection(transactions, filters = {}) {
+  const selectedTransactions = filterLedgerTransactions(transactions, filters);
 
   const income = roundMoney(
-    monthTransactions
+    selectedTransactions
       .filter((transaction) => Number(transaction.amount) > 0)
       .reduce((sum, transaction) => sum + Number(transaction.amount), 0),
   );
   const expense = roundMoney(
-    monthTransactions
+    selectedTransactions
       .filter((transaction) => Number(transaction.amount) < 0)
       .reduce((sum, transaction) => sum + Math.abs(Number(transaction.amount)), 0),
   );
   const categoryMap = new Map();
 
-  for (const transaction of monthTransactions) {
+  for (const transaction of selectedTransactions) {
     if (Number(transaction.amount) >= 0) {
       continue;
     }
@@ -72,22 +77,47 @@ export function summarizeMonth(transactions, monthKey) {
     income,
     expense,
     balance: roundMoney(income - expense),
-    count: monthTransactions.length,
+    count: selectedTransactions.length,
     categoryTotals,
   };
 }
 
-export function toCsv(transactions) {
-  const rows = transactions.map((transaction) => [
-    transaction.date,
-    transaction.direction === "income" ? "收入" : "支出",
-    transaction.category,
-    transaction.description,
-    Number(transaction.amount).toFixed(2),
-    transaction.source || "manual",
-  ]);
+export function filterLedgerTransactions(transactions, filters = {}) {
+  const months = new Set((filters.months || []).filter(Boolean));
+  const accountIds = new Set((filters.accountIds || []).filter(Boolean));
+  const shouldFilterMonths = months.size > 0;
+  const shouldFilterAccounts = accountIds.size > 0;
 
-  return [["日期", "类型", "分类", "说明", "金额", "来源"], ...rows]
+  return transactions.filter((transaction) => {
+    const date = String(transaction.date || "");
+    const transactionMonth = date.slice(0, 7);
+    const accountId = transaction.accountId || UNASSIGNED_ACCOUNT_ID;
+
+    return (
+      (!shouldFilterMonths || months.has(transactionMonth)) &&
+      (!shouldFilterAccounts || accountIds.has(accountId))
+    );
+  });
+}
+
+export function toCsv(transactions, options = {}) {
+  const accountNameById = options.accountNameById || {};
+  const rows = transactions.map((transaction) => {
+    const accountId = transaction.accountId || UNASSIGNED_ACCOUNT_ID;
+    const accountName = accountNameById[accountId] || UNASSIGNED_ACCOUNT_NAME;
+
+    return [
+      transaction.date,
+      accountName,
+      transaction.direction === "income" ? "收入" : "支出",
+      transaction.category,
+      transaction.description,
+      Number(transaction.amount).toFixed(2),
+      transaction.source || "manual",
+    ];
+  });
+
+  return [["日期", "账户", "类型", "分类", "说明", "金额", "来源"], ...rows]
     .map((row) => row.map(escapeCsvField).join(","))
     .join("\n");
 }

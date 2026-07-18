@@ -2,9 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  UNASSIGNED_ACCOUNT_ID,
+  filterLedgerTransactions,
   inferCategory,
   parseLedgerText,
   summarizeMonth,
+  summarizeSelection,
   toCsv,
 } from "../assets/ledger-core.mjs";
 
@@ -83,10 +86,71 @@ test("exports csv with escaped fields", () => {
 
   assert.equal(
     csv,
-    "日期,类型,分类,说明,金额,来源\n2026-07-02,支出,餐饮,\"午餐,咖啡\",-45.60,manual",
+    "日期,账户,类型,分类,说明,金额,来源\n2026-07-02,未指定账户,支出,餐饮,\"午餐,咖啡\",-45.60,manual",
   );
 });
 
 test("infers a conservative fallback category", () => {
   assert.equal(inferCategory("未知商户"), "其他");
+});
+
+test("summarizes selected months across selected accounts", () => {
+  const summary = summarizeSelection(
+    [
+      { date: "2026-07-02", amount: -32.5, category: "餐饮", accountId: "cmb" },
+      { date: "2026-08-03", amount: 12000, category: "收入", accountId: "wechat" },
+      { date: "2026-08-04", amount: -48.2, category: "交通", accountId: "wechat" },
+      { date: "2026-09-01", amount: -100, category: "购物", accountId: "cmb" },
+    ],
+    { months: ["2026-07", "2026-08"], accountIds: ["wechat"] },
+  );
+
+  assert.equal(summary.income, 12000);
+  assert.equal(summary.expense, 48.2);
+  assert.equal(summary.balance, 11951.8);
+  assert.equal(summary.count, 2);
+  assert.deepEqual(summary.categoryTotals, [{ category: "交通", amount: 48.2 }]);
+});
+
+test("filters transactions by selected months and unassigned account", () => {
+  const transactions = filterLedgerTransactions(
+    [
+      { date: "2026-07-01", amount: -10, category: "餐饮" },
+      { date: "2026-07-02", amount: -20, category: "交通", accountId: "cmb" },
+      { date: "2026-08-01", amount: -30, category: "购物" },
+    ],
+    { months: ["2026-07"], accountIds: [UNASSIGNED_ACCOUNT_ID] },
+  );
+
+  assert.deepEqual(transactions, [{ date: "2026-07-01", amount: -10, category: "餐饮" }]);
+});
+
+test("exports csv with account names", () => {
+  const csv = toCsv(
+    [
+      {
+        date: "2026-07-02",
+        description: "午餐,咖啡",
+        amount: -45.6,
+        direction: "expense",
+        category: "餐饮",
+        source: "manual",
+        accountId: "cmb",
+      },
+      {
+        date: "2026-07-03",
+        description: "旧数据",
+        amount: -8,
+        direction: "expense",
+        category: "其他",
+        source: "manual",
+      },
+    ],
+    { accountNameById: { cmb: "招商信用卡" } },
+  );
+
+  assert.equal(
+    csv,
+    "日期,账户,类型,分类,说明,金额,来源\n2026-07-02,招商信用卡,支出,餐饮,\"午餐,咖啡\",-45.60,manual\n2026-07-03,未指定账户,支出,其他,旧数据,-8.00,manual",
+  );
 });
