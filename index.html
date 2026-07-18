@@ -92,6 +92,10 @@
             </select>
           </label>
           <label>
+            <span>账户</span>
+            <select id="accountInput" name="account"></select>
+          </label>
+          <label>
             <span>金额</span>
             <input
               id="amountInput"
@@ -141,6 +145,11 @@
           <span class="file-drop-subtitle">首版支持招商银行可复制文字电子账单；扫描件需接入 AI/OCR 后识别。</span>
         </label>
 
+        <label class="import-account-control">
+          <span>入账账户</span>
+          <select id="importAccountInput" name="importAccount"></select>
+        </label>
+
         <div class="file-meta">
           <strong id="fileName">尚未选择文件</strong>
           <span>文件只在当前浏览器中处理；确认入账前不会保存交易。</span>
@@ -178,6 +187,32 @@
             <button id="discardImportButton" class="ghost-button" type="button">放弃本次结果</button>
           </div>
         </div>
+      </section>
+
+      <section class="accounts-panel" aria-labelledby="accounts-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">账户</p>
+            <h2 id="accounts-title">账户管理</h2>
+          </div>
+        </div>
+
+        <form id="accountForm" class="account-form">
+          <label>
+            <span>账户名称</span>
+            <input
+              id="accountNameInput"
+              name="accountName"
+              type="text"
+              maxlength="24"
+              placeholder="例如：储蓄卡"
+            />
+          </label>
+          <button class="primary-button" type="submit">添加</button>
+        </form>
+
+        <p id="accountStatus" class="inline-status" role="status" aria-live="polite"></p>
+        <div id="accountList" class="account-list"></div>
       </section>
 
       <section class="transactions-panel" aria-labelledby="transactions-title">

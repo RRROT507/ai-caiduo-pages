@@ -1,14 +1,30 @@
 import { analyzeLedgerFile } from "./ledger-importer.mjs";
-import { inferCategory, summarizeMonth, toCsv } from "./ledger-core.mjs";
+import {
+  UNASSIGNED_ACCOUNT_ID,
+  UNASSIGNED_ACCOUNT_NAME,
+  inferCategory,
+  summarizeMonth,
+  toCsv,
+} from "./ledger-core.mjs";
 
 const STORAGE_KEY = "ai-caiduo-transactions-v1";
+const ACCOUNTS_STORAGE_KEY = "ai-caiduo-accounts-v1";
+const DEFAULT_ACCOUNTS = [
+  { id: "cmb-credit-card", name: "招商信用卡" },
+  { id: "wechat", name: "微信" },
+  { id: "alipay", name: "支付宝" },
+  { id: "cash", name: "现金" },
+];
 const CATEGORIES = ["餐饮", "交通", "购物", "居家", "医疗", "娱乐", "学习", "收入", "其他"];
 
 const state = {
   transactions: loadTransactions(),
+  accounts: loadAccounts(),
   pendingTransactions: [],
   selectedFile: null,
   month: getCurrentMonth(),
+  selectedMonths: [getCurrentMonth()],
+  selectedAccountIds: [],
   categoryFilter: "all",
 };
 
@@ -24,10 +40,12 @@ const elements = {
   dateInput: document.querySelector("#dateInput"),
   directionInput: document.querySelector("#directionInput"),
   amountInput: document.querySelector("#amountInput"),
+  accountInput: document.querySelector("#accountInput"),
   categoryInput: document.querySelector("#categoryInput"),
   descriptionInput: document.querySelector("#descriptionInput"),
   fileInput: document.querySelector("#fileInput"),
   fileName: document.querySelector("#fileName"),
+  importAccountInput: document.querySelector("#importAccountInput"),
   importButton: document.querySelector("#importButton"),
   importStatus: document.querySelector("#importStatus"),
   pendingPanel: document.querySelector("#pendingPanel"),
@@ -38,6 +56,10 @@ const elements = {
   categoryFilter: document.querySelector("#categoryFilter"),
   exportButton: document.querySelector("#exportButton"),
   clearButton: document.querySelector("#clearButton"),
+  accountForm: document.querySelector("#accountForm"),
+  accountNameInput: document.querySelector("#accountNameInput"),
+  accountStatus: document.querySelector("#accountStatus"),
+  accountList: document.querySelector("#accountList"),
   emptyState: document.querySelector("#emptyState"),
   transactionRows: document.querySelector("#transactionRows"),
 };
@@ -48,6 +70,7 @@ function init() {
   elements.monthInput.value = state.month;
   elements.dateInput.value = getToday();
   renderCategoryOptions();
+  renderAccountOptions();
   bindEvents();
   render();
   registerServiceWorker();
@@ -137,6 +160,29 @@ function bindEvents() {
     }
 
     deleteTransaction(button.dataset.deleteId);
+  });
+
+  elements.accountForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    addAccount();
+  });
+
+  elements.accountList.addEventListener("change", (event) => {
+    const input = event.target.closest("[data-account-name-id]");
+    if (!input) {
+      return;
+    }
+
+    renameAccount(input.dataset.accountNameId, input.value);
+  });
+
+  elements.accountList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-delete-account-id]");
+    if (!button) {
+      return;
+    }
+
+    deleteAccount(button.dataset.deleteAccountId);
   });
 }
 
@@ -277,8 +323,61 @@ function deleteTransaction(id) {
   render();
 }
 
+function addAccount() {
+  const name = elements.accountNameInput.value.trim();
+  if (!name) {
+    setAccountStatus("请输入账户名称");
+    return;
+  }
+  if (state.accounts.some((account) => account.name === name)) {
+    setAccountStatus("账户名称已存在");
+    return;
+  }
+
+  state.accounts = [
+    ...state.accounts,
+    { id: createId(), name, createdAt: new Date().toISOString() },
+  ];
+  elements.accountNameInput.value = "";
+  persistAccounts();
+  setAccountStatus(`已添加 ${name}`);
+  render();
+}
+
+function renameAccount(id, nextName) {
+  const name = nextName.trim();
+  if (!name) {
+    setAccountStatus("账户名称不能为空");
+    renderAccountList();
+    return;
+  }
+  if (state.accounts.some((account) => account.id !== id && account.name === name)) {
+    setAccountStatus("账户名称已存在");
+    renderAccountList();
+    return;
+  }
+
+  state.accounts = state.accounts.map((account) =>
+    account.id === id ? { ...account, name } : account,
+  );
+  persistAccounts();
+  setAccountStatus(`已更新 ${name}`);
+  render();
+}
+
+function deleteAccount(id) {
+  const account = state.accounts.find((item) => item.id === id);
+  state.accounts = state.accounts.filter((item) => item.id !== id);
+  state.selectedAccountIds = state.selectedAccountIds.filter((accountId) => accountId !== id);
+  persistAccounts();
+  setAccountStatus(account ? `已删除 ${account.name}` : "");
+  render();
+}
+
 function render() {
   renderSummary();
+  renderAccountOptions();
+  renderAccountList();
   renderCategoryFilter();
   renderTransactions();
   renderPendingImport();
@@ -351,6 +450,55 @@ function renderCategoryOptions() {
     }),
   );
   elements.categoryInput.value = "其他";
+}
+
+function renderAccountOptions() {
+  renderAccountSelect(elements.accountInput, elements.accountInput.value);
+  renderAccountSelect(elements.importAccountInput, elements.importAccountInput.value);
+}
+
+function renderAccountSelect(select, selectedValue) {
+  const defaultValue = getDefaultAccountId();
+  const accountOptions = [
+    createOption(UNASSIGNED_ACCOUNT_ID, UNASSIGNED_ACCOUNT_NAME),
+    ...state.accounts.map((account) => createOption(account.id, account.name)),
+  ];
+  const values = new Set(accountOptions.map((option) => option.value));
+
+  replaceChildrenCompat(select, ...accountOptions);
+  select.value = values.has(selectedValue) ? selectedValue : defaultValue;
+}
+
+function renderAccountList() {
+  replaceChildrenCompat(
+    elements.accountList,
+    ...state.accounts.map((account) => {
+      const row = document.createElement("div");
+      row.className = "account-row";
+      row.innerHTML = `
+        <input data-account-name-id="${escapeHtml(account.id)}" value="${escapeHtml(
+          account.name,
+        )}" aria-label="账户名称" />
+        <button class="delete-button" type="button" data-delete-account-id="${escapeHtml(
+          account.id,
+        )}">删除</button>
+      `;
+      return row;
+    }),
+  );
+}
+
+function createOption(value, label) {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  return option;
+}
+
+function getDefaultAccountId() {
+  return state.accounts.some((account) => account.id === "cmb-credit-card")
+    ? "cmb-credit-card"
+    : state.accounts[0]?.id || UNASSIGNED_ACCOUNT_ID;
 }
 
 function createCategoryBar(item, maxAmount) {
@@ -479,6 +627,35 @@ function loadTransactions() {
   }
 }
 
+function loadAccounts() {
+  try {
+    const raw = localStorage.getItem(ACCOUNTS_STORAGE_KEY);
+    if (!raw) {
+      return createDefaultAccounts();
+    }
+    const parsed = JSON.parse(raw);
+    const accounts = Array.isArray(parsed) ? parsed.filter(isValidAccount) : [];
+    return accounts.length > 0 ? accounts : [];
+  } catch {
+    return createDefaultAccounts();
+  }
+}
+
+function createDefaultAccounts() {
+  return DEFAULT_ACCOUNTS.map((account) => ({
+    ...account,
+    createdAt: new Date().toISOString(),
+  }));
+}
+
+function persistAccounts() {
+  localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(state.accounts));
+}
+
+function isValidAccount(account) {
+  return Boolean(account && account.id && String(account.name || "").trim());
+}
+
 function persist() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.transactions));
 }
@@ -501,6 +678,10 @@ function clearSelectedFile() {
 
 function setImportStatus(message) {
   elements.importStatus.textContent = message;
+}
+
+function setAccountStatus(message) {
+  elements.accountStatus.textContent = message;
 }
 
 function getAiImportEndpoint() {

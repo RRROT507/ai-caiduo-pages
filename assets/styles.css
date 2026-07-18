@@ -158,6 +158,15 @@ a:hover {
   grid-column: 2;
 }
 
+.accounts-panel {
+  grid-column: 2;
+  padding: 22px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
 .transactions-panel {
   grid-column: 1 / -1;
   overflow: hidden;
@@ -245,6 +254,10 @@ textarea {
 .file-meta strong {
   color: var(--green-dark);
   overflow-wrap: anywhere;
+}
+
+.import-account-control {
+  margin-top: 12px;
 }
 
 .metric-grid {
@@ -377,6 +390,34 @@ textarea {
 
 .entry-form .primary-button {
   align-self: end;
+}
+
+.account-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.inline-status {
+  min-height: 20px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.account-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.account-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
 }
 
 .action-row {
@@ -548,6 +589,7 @@ td {
   .overview-panel,
   .entry-panel,
   .import-panel,
+  .accounts-panel,
   .transactions-panel {
     grid-column: 1;
   }
@@ -588,7 +630,9 @@ td {
   }
 
   .metric-grid,
-  .entry-form {
+  .entry-form,
+  .account-form,
+  .account-row {
     grid-template-columns: 1fr;
   }
 

@@ -47,6 +47,24 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
     await page.goto(server.url, { waitUntil: "domcontentloaded" });
     await page.evaluate(() => localStorage.clear());
     await page.reload({ waitUntil: "domcontentloaded" });
+
+    await page.fill("#accountNameInput", "储蓄卡");
+    await page.click("#accountForm button[type=submit]");
+    await page.waitForTimeout(100);
+
+    assert.ok(
+      await page.locator('#accountList input[value="招商信用卡"]').isVisible(),
+    );
+    assert.ok(await page.locator('#accountList input[value="储蓄卡"]').isVisible());
+    assert.equal(
+      await page.locator("#accountInput option").filter({ hasText: "储蓄卡" }).count(),
+      1,
+    );
+    assert.equal(
+      await page.locator("#importAccountInput option").filter({ hasText: "储蓄卡" }).count(),
+      1,
+    );
+
     await page.fill("#monthInput", "2026-07");
     await page.setInputFiles("#fileInput", {
       name: "cmb-statement.txt",
