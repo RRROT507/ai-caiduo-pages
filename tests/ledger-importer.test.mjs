@@ -2,7 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 
-import { analyzeLedgerFile } from "../assets/ledger-importer.mjs";
+import {
+  analyzeLedgerFile,
+  parseCmbCreditCardStatementText,
+} from "../assets/ledger-importer.mjs";
 
 test("analyzes a local statement text file with fallback parsing", async () => {
   const file = new File(
@@ -116,6 +119,75 @@ test("normalizes transactions returned by an AI import endpoint", async () => {
   } finally {
     await endpoint.close();
   }
+});
+
+test("does not parse binary pdf internals as transactions", async () => {
+  const file = new File(
+    [
+      `%PDF-1.7
+1 0 obj
+<< /Producer (OpenPDF) /ModDate (D:20150330120000) >>
+stream
+2015-03-30 binary-object-fragment 1.40
+endstream
+endobj`,
+    ],
+    "binary-looking.pdf",
+    { type: "application/pdf" },
+  );
+
+  const result = await analyzeLedgerFile(file, { fallbackYear: 2026 });
+
+  assert.equal(result.transactions.length, 0);
+  assert.equal(result.mode, "needs-ai-backend");
+});
+
+test("parses China Merchants Bank credit card statement rows", () => {
+  const transactions = parseCmbCreditCardStatementText(
+    `招商银行信用卡对账单（个人消费卡账户 2026年03月）
+03/06 掌上生活还款 -30,435.91 6746 -30,435.91
+03/01 03/01 增值服务使用费-用卡安全保障 5.00 1755 5.00
+03/02 03/03 财付通-虎头军煎饼（鼎成中心店） -14.00 1755 -14.00
+03/10 03/11 支付宝-高德打车 10.30 1755 10.30`,
+    { fallbackYear: 2026 },
+  );
+
+  assert.deepEqual(
+    transactions.map(({ date, description, amount, direction, category, source }) => ({
+      date,
+      description,
+      amount,
+      direction,
+      category,
+      source,
+    })),
+    [
+      {
+        date: "2026-03-01",
+        description: "增值服务使用费-用卡安全保障",
+        amount: -5,
+        direction: "expense",
+        category: "其他",
+        source: "file",
+      },
+      {
+        date: "2026-03-02",
+        description: "财付通-虎头军煎饼（鼎成中心店）",
+        amount: 14,
+        direction: "income",
+        category: "收入",
+        source: "file",
+      },
+      {
+        date: "2026-03-10",
+        description: "支付宝-高德打车",
+        amount: -10.3,
+        direction: "expense",
+        category: "交通",
+        source: "file",
+      },
+    ],
+  );
 });
 
 function startJsonEndpoint(responseBody) {

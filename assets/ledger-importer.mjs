@@ -2,6 +2,8 @@ import { inferCategory, parseLedgerText, roundMoney } from "./ledger-core.mjs";
 
 const PDF_TYPE = "application/pdf";
 const TEXT_LIKE_EXTENSIONS = [".txt", ".csv", ".tsv", ".ofx", ".qfx"];
+const CMB_CREDIT_CARD_PATTERN = /招商银行信用卡对账单|CMB Credit Card Statement/u;
+const CMB_SKIP_PATTERN = /还款|还款反馈金/u;
 
 export async function analyzeLedgerFile(file, options = {}) {
   if (!file) {
@@ -30,10 +32,7 @@ export async function analyzeLedgerFile(file, options = {}) {
     }
   }
 
-  const localTransactions = parseLedgerText(extractedText, { fallbackYear }).map((transaction) => ({
-    ...transaction,
-    source: "file",
-  }));
+  const localTransactions = parseLocalStatementText(extractedText, { fallbackYear });
 
   if (localTransactions.length > 0) {
     return {
@@ -48,9 +47,39 @@ export async function analyzeLedgerFile(file, options = {}) {
     mode: options.endpoint ? "empty" : "needs-ai-backend",
     message:
       file.type === PDF_TYPE || getFileExtension(file.name) === ".pdf"
-        ? "这个 PDF 需要接入 AI/OCR 服务后识别"
+        ? "这个 PDF 暂未识别出可入账交易，需要接入 AI/OCR 服务后识别"
         : "没有识别到可导入交易",
   };
+}
+
+export function parseCmbCreditCardStatementText(text, options = {}) {
+  const statement = getStatementYearMonth(text, options.fallbackYear);
+  const transactions = [];
+
+  for (const rawLine of String(text).split(/\r?\n/u)) {
+    const line = rawLine.replace(/\s+/gu, " ").trim();
+    const parsed = parseCmbTransactionLine(line, statement);
+    if (parsed) {
+      transactions.push(parsed);
+    }
+  }
+
+  return transactions;
+}
+
+function parseLocalStatementText(text, options) {
+  if (!text.trim()) {
+    return [];
+  }
+
+  if (CMB_CREDIT_CARD_PATTERN.test(text)) {
+    return parseCmbCreditCardStatementText(text, options);
+  }
+
+  return parseLedgerText(text, { fallbackYear: options.fallbackYear }).map((transaction) => ({
+    ...transaction,
+    source: "file",
+  }));
 }
 
 async function analyzeWithEndpoint(file, extractedText, options) {
@@ -95,32 +124,126 @@ async function extractTextFromFile(file) {
 }
 
 async function extractTextFromPdf(file) {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const raw = new TextDecoder("latin1").decode(bytes);
-  const textFragments = [];
-
-  for (const match of raw.matchAll(/\((?:\\.|[^\\)])*\)/gu)) {
-    textFragments.push(unescapePdfLiteral(match[0].slice(1, -1)));
+  if (typeof DOMMatrix === "undefined") {
+    return "";
   }
 
-  for (const match of raw.matchAll(/<([0-9A-Fa-f]{8,})>/gu)) {
-    const decoded = decodePdfHexString(match[1]);
-    if (decoded) {
-      textFragments.push(decoded);
+  try {
+    const pdfjs = await import("./vendor/pdfjs/pdf.min.mjs");
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+      "./vendor/pdfjs/pdf.worker.min.mjs",
+      import.meta.url,
+    ).toString();
+
+    const document = await pdfjs.getDocument({
+      data: new Uint8Array(await file.arrayBuffer()),
+      isEvalSupported: false,
+      useSystemFonts: true,
+    }).promise;
+    const pages = [];
+
+    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+      const page = await document.getPage(pageNumber);
+      const content = await page.getTextContent();
+      pages.push(textContentToLines(content).join("\n"));
     }
+
+    return pages.join("\n");
+  } catch {
+    return "";
+  }
+}
+
+function textContentToLines(content) {
+  const rows = new Map();
+
+  for (const item of content.items || []) {
+    const text = String(item.str || "").trim();
+    if (!text) {
+      continue;
+    }
+
+    const transform = item.transform || [];
+    const x = Number(transform[4]) || 0;
+    const y = Math.round(Number(transform[5]) || 0);
+    const row = rows.get(y) || [];
+    row.push({ x, text });
+    rows.set(y, row);
   }
 
-  const looseUtf8 = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-  const visibleLooseText = looseUtf8
-    .replace(/[^\p{Letter}\p{Number}\p{Punctuation}\p{Separator}\n.-]/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
+  return [...rows.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .map(([, row]) =>
+      row
+        .sort((a, b) => a.x - b.x)
+        .map((item) => item.text)
+        .join(" ")
+        .replace(/\s+/gu, " ")
+        .trim(),
+    )
+    .filter(Boolean);
+}
 
-  if (visibleLooseText) {
-    textFragments.push(visibleLooseText);
+function parseCmbTransactionLine(line, statement) {
+  const match = line.match(
+    /^(\d{2})\/(\d{2})(?:\s+\d{2}\/\d{2})?\s+(.+?)\s+([-+]?\d[\d,]*\.\d{2})\s+\d{4}\s+[-+]?\d[\d,]*\.\d{2}(?:\s|$)/u,
+  );
+  if (!match) {
+    return null;
   }
 
-  return textFragments.join("\n");
+  const description = match[3].trim();
+  if (!description || CMB_SKIP_PATTERN.test(description)) {
+    return null;
+  }
+
+  const amount = parseAmount(match[4]);
+  if (!Number.isFinite(amount) || amount === 0) {
+    return null;
+  }
+
+  const direction = amount >= 0 ? "expense" : "income";
+  const signedAmount = direction === "expense" ? -Math.abs(amount) : Math.abs(amount);
+
+  return {
+    date: formatMonthDay(statement, match[1], match[2]),
+    description,
+    amount: roundMoney(signedAmount),
+    direction,
+    category: inferCategory(description, direction),
+    source: "file",
+  };
+}
+
+function getStatementYearMonth(text, fallbackYear) {
+  const chineseMatch = String(text).match(/(\d{4})年(\d{1,2})月/u);
+  if (chineseMatch) {
+    return {
+      year: Number(chineseMatch[1]),
+      month: Number(chineseMatch[2]),
+    };
+  }
+
+  const dottedMatch = String(text).match(/(?:Statement\s*)?\((\d{4})\.(\d{1,2})\)/iu);
+  if (dottedMatch) {
+    return {
+      year: Number(dottedMatch[1]),
+      month: Number(dottedMatch[2]),
+    };
+  }
+
+  return {
+    year: Number(fallbackYear) || new Date().getFullYear(),
+    month: new Date().getMonth() + 1,
+  };
+}
+
+function formatMonthDay(statement, monthText, dayText) {
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const year = month > statement.month ? statement.year - 1 : statement.year;
+
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function normalizeAiTransaction(transaction) {
@@ -159,7 +282,7 @@ function parseAmount(value) {
     return value;
   }
 
-  return Number(String(value ?? "").replace(/[¥,\s]/gu, ""));
+  return Number(String(value ?? "").replace(/[¥￥,\s]/gu, ""));
 }
 
 function normalizeDate(value) {
@@ -175,34 +298,4 @@ function normalizeDate(value) {
 function getFileExtension(name = "") {
   const match = String(name).toLowerCase().match(/\.[^.]+$/u);
   return match ? match[0] : "";
-}
-
-function unescapePdfLiteral(value) {
-  return value
-    .replace(/\\n/gu, "\n")
-    .replace(/\\r/gu, "\n")
-    .replace(/\\t/gu, "\t")
-    .replace(/\\([()\\])/gu, "$1")
-    .trim();
-}
-
-function decodePdfHexString(hex) {
-  const bytes = [];
-  for (let index = 0; index < hex.length - 1; index += 2) {
-    bytes.push(Number.parseInt(hex.slice(index, index + 2), 16));
-  }
-
-  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
-    return decodeUtf16Be(bytes.slice(2)).trim();
-  }
-
-  return new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(bytes)).trim();
-}
-
-function decodeUtf16Be(bytes) {
-  let output = "";
-  for (let index = 0; index < bytes.length - 1; index += 2) {
-    output += String.fromCharCode((bytes[index] << 8) | bytes[index + 1]);
-  }
-  return output;
 }
