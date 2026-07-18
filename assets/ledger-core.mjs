@@ -14,6 +14,7 @@ export const UNASSIGNED_ACCOUNT_NAME = "未指定账户";
 const INCOME_PATTERN = /收入|入账|工资|奖金|退款|转入|报销|利息/u;
 const EXPENSE_PATTERN = /支出|消费|付款|扣款|转出|支付|还款/u;
 const SKIP_PATTERN = /交易日期|记账日期|摘要|金额|余额|本页|小计|合计|总计|币种/u;
+const STATEMENT_META_PATTERN = /账单周期|账单期间|统计期间|起止日期|起始日期|结束日期|年账单|月账单/u;
 
 export function inferCategory(description, direction = "expense") {
   if (direction === "income") {
@@ -174,7 +175,7 @@ function toFiniteMoney(value) {
 
 function parseLine(line, fallbackYear) {
   const originalLine = String(line).trim();
-  if (!originalLine || SKIP_PATTERN.test(originalLine)) {
+  if (!originalLine || SKIP_PATTERN.test(originalLine) || STATEMENT_META_PATTERN.test(originalLine)) {
     return null;
   }
 
@@ -183,7 +184,7 @@ function parseLine(line, fallbackYear) {
     return null;
   }
 
-  const withoutDate = originalLine.replace(dateMatch.raw, " ");
+  const withoutDate = stripSecondaryDates(originalLine.replace(dateMatch.raw, " "));
   const amountMatch = findAmount(withoutDate);
   if (!amountMatch) {
     return null;
@@ -260,6 +261,13 @@ function cleanDescription(line, amountRaw) {
     .trim()
     .replace(/[|,，;；]+$/u, "")
     .trim();
+}
+
+function stripSecondaryDates(line) {
+  return String(line)
+    .replace(/(?<!\d)\d{4}[./-]\d{1,2}[./-]\d{1,2}(?!\d)/gu, " ")
+    .replace(/(?<!\d)\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日?(?!\d)/gu, " ")
+    .replace(/^\s*(?:至|到|-|—|–)?\s*\d{1,2}[/-]\d{1,2}(?!\d)/u, " ");
 }
 
 function formatDate(year, month, day) {

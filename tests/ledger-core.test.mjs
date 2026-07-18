@@ -52,6 +52,48 @@ test("parses pasted statement text into normalized transactions", () => {
   ]);
 });
 
+test("ignores statement date ranges when parsing ledger text", () => {
+  const transactions = parseLedgerText(
+    `
+    账单周期 2026.1.1-2026.1.31
+    统计期间 2026.1.1 至 2026年1月31日 支出合计
+    2026.1.1 2026 年账单
+    `,
+    { fallbackYear: 2026 },
+  );
+
+  assert.deepEqual(transactions, []);
+});
+
+test("parses ledger rows with transaction and posting dates", () => {
+  const transactions = parseLedgerText(
+    `
+    03/01 03/02 星巴克咖啡 -32.50
+    2026-01-01 2026-01-02 地铁出行 支出 6.00
+    `,
+    { fallbackYear: 2026 },
+  );
+
+  assert.deepEqual(transactions, [
+    {
+      date: "2026-03-01",
+      description: "星巴克咖啡",
+      amount: -32.5,
+      direction: "expense",
+      category: "餐饮",
+      source: "paste",
+    },
+    {
+      date: "2026-01-01",
+      description: "地铁出行",
+      amount: -6,
+      direction: "expense",
+      category: "交通",
+      source: "paste",
+    },
+  ]);
+});
+
 test("summarizes one month with positive expense totals", () => {
   const summary = summarizeMonth(
     [
