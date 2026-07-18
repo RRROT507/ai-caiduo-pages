@@ -4,6 +4,7 @@ const PDF_TYPE = "application/pdf";
 const TEXT_LIKE_EXTENSIONS = [".txt", ".csv", ".tsv", ".ofx", ".qfx"];
 const CMB_CREDIT_CARD_PATTERN = /招商银行信用卡对账单|CMB Credit Card Statement/u;
 const CMB_SKIP_PATTERN = /还款|还款反馈金/u;
+const CMB_INCOME_DESCRIPTION_PATTERN = /朝朝宝|退款|退货|返现|冲正|退费|利息|收益|转入|入账/u;
 
 export async function analyzeLedgerFile(file, options = {}) {
   if (!file) {
@@ -202,7 +203,7 @@ function parseCmbTransactionLine(line, statement) {
     return null;
   }
 
-  const direction = amount >= 0 ? "expense" : "income";
+  const direction = getCmbTransactionDirection(description, amount);
   const signedAmount = direction === "expense" ? -Math.abs(amount) : Math.abs(amount);
 
   return {
@@ -213,6 +214,14 @@ function parseCmbTransactionLine(line, statement) {
     category: inferCategory(description, direction),
     source: "file",
   };
+}
+
+function getCmbTransactionDirection(description, amount) {
+  if (CMB_INCOME_DESCRIPTION_PATTERN.test(description)) {
+    return "income";
+  }
+
+  return amount >= 0 ? "expense" : "income";
 }
 
 function getStatementYearMonth(text, fallbackYear) {

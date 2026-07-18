@@ -148,6 +148,7 @@ test("parses China Merchants Bank credit card statement rows", () => {
 03/06 掌上生活还款 -30,435.91 6746 -30,435.91
 03/01 03/01 增值服务使用费-用卡安全保障 5.00 1755 5.00
 03/02 03/03 财付通-虎头军煎饼（鼎成中心店） -14.00 1755 -14.00
+02/23 02/24 朝朝宝 31.74 1755 31.74
 03/10 03/11 支付宝-高德打车 10.30 1755 10.30`,
     { fallbackYear: 2026 },
   );
@@ -174,6 +175,14 @@ test("parses China Merchants Bank credit card statement rows", () => {
         date: "2026-03-02",
         description: "财付通-虎头军煎饼（鼎成中心店）",
         amount: 14,
+        direction: "income",
+        category: "收入",
+        source: "file",
+      },
+      {
+        date: "2026-02-23",
+        description: "朝朝宝",
+        amount: 31.74,
         direction: "income",
         category: "收入",
         source: "file",
