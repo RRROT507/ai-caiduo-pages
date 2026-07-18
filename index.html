@@ -3,38 +3,181 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#1f8a70" />
+  <meta
+    name="description"
+    content="AI财舵 Web 试用版，本地优先的个人记账工具。"
+  />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="assets/icons/icon-192.png" />
+  <link rel="stylesheet" href="assets/styles.css" />
   <title>AI财舵</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      line-height: 1.65;
-      color: #18212f;
-      background: #f7f8fa;
-    }
-    main {
-      max-width: 760px;
-      margin: 0 auto;
-      padding: 48px 20px 72px;
-    }
-    h1 {
-      font-size: 32px;
-      line-height: 1.2;
-      margin: 0 0 8px;
-    }
-    p, li {
-      font-size: 16px;
-    }
-  </style>
 </head>
 <body>
-  <main>
-    <h1>AI财舵</h1>
-    <p>AI财舵是一款本地优先的个人记账工具，用于导入并整理用户自行选择的银行账单文件。</p>
-    <ul>
-      <li><a href="privacy.html">隐私政策</a></li>
-      <li><a href="support.html">支持页面</a></li>
-    </ul>
-  </main>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="assets/icons/icon-192.png" width="44" height="44" alt="" />
+        <div>
+          <p class="eyebrow">本地优先记账</p>
+          <h1>AI财舵</h1>
+        </div>
+      </div>
+      <nav class="top-links" aria-label="公开页面">
+        <a href="privacy.html">隐私政策</a>
+        <a href="support.html">支持</a>
+      </nav>
+    </header>
+
+    <main class="workspace">
+      <section class="overview-panel" aria-labelledby="overview-title">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">月度概览</p>
+            <h2 id="overview-title">现金流看板</h2>
+          </div>
+          <label class="month-control">
+            <span>月份</span>
+            <input id="monthInput" type="month" />
+          </label>
+        </div>
+
+        <div class="metric-grid">
+          <article class="metric metric-income">
+            <span>收入</span>
+            <strong id="incomeTotal">¥0.00</strong>
+          </article>
+          <article class="metric metric-expense">
+            <span>支出</span>
+            <strong id="expenseTotal">¥0.00</strong>
+          </article>
+          <article class="metric metric-balance">
+            <span>结余</span>
+            <strong id="balanceTotal">¥0.00</strong>
+          </article>
+          <article class="metric">
+            <span>笔数</span>
+            <strong id="transactionCount">0</strong>
+          </article>
+        </div>
+
+        <div class="category-panel">
+          <div class="section-heading">
+            <h3>支出分类</h3>
+            <span id="categoryHint">暂无支出</span>
+          </div>
+          <div id="categoryBars" class="category-bars" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section class="entry-panel" aria-labelledby="entry-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">快速入账</p>
+            <h2 id="entry-title">新增交易</h2>
+          </div>
+        </div>
+
+        <form id="entryForm" class="entry-form">
+          <label>
+            <span>日期</span>
+            <input id="dateInput" name="date" type="date" required />
+          </label>
+          <label>
+            <span>类型</span>
+            <select id="directionInput" name="direction" required>
+              <option value="expense">支出</option>
+              <option value="income">收入</option>
+            </select>
+          </label>
+          <label>
+            <span>金额</span>
+            <input
+              id="amountInput"
+              name="amount"
+              type="number"
+              min="0.01"
+              step="0.01"
+              inputmode="decimal"
+              placeholder="0.00"
+              required
+            />
+          </label>
+          <label>
+            <span>分类</span>
+            <select id="categoryInput" name="category" required></select>
+          </label>
+          <label class="span-2">
+            <span>说明</span>
+            <input
+              id="descriptionInput"
+              name="description"
+              type="text"
+              maxlength="40"
+              placeholder="例如：午餐、工资、地铁"
+              required
+            />
+          </label>
+          <button class="primary-button" type="submit">添加</button>
+        </form>
+      </section>
+
+      <section class="import-panel" aria-labelledby="import-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">账单文本</p>
+            <h2 id="import-title">粘贴导入</h2>
+          </div>
+          <button id="sampleButton" class="ghost-button" type="button">填入示例</button>
+        </div>
+        <textarea
+          id="pasteInput"
+          rows="8"
+          spellcheck="false"
+          placeholder="2026-07-02 星巴克咖啡 -32.50&#10;2026/07/03 工资入账 12000.00 收入&#10;07-04 滴滴出行 支出 48.20"
+        ></textarea>
+        <div class="action-row">
+          <button id="importButton" class="primary-button" type="button">解析并导入</button>
+          <span id="importStatus" role="status" aria-live="polite"></span>
+        </div>
+      </section>
+
+      <section class="transactions-panel" aria-labelledby="transactions-title">
+        <div class="section-heading transactions-heading">
+          <div>
+            <p class="eyebrow">明细</p>
+            <h2 id="transactions-title">交易记录</h2>
+          </div>
+          <div class="toolbar">
+            <select id="categoryFilter" aria-label="筛选分类"></select>
+            <button id="exportButton" class="ghost-button" type="button">导出 CSV</button>
+            <button id="clearButton" class="danger-button" type="button">清空</button>
+          </div>
+        </div>
+        <div id="emptyState" class="empty-state">
+          <strong>还没有交易</strong>
+          <span>添加一笔记录，或粘贴账单文本导入。</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>说明</th>
+                <th>分类</th>
+                <th>类型</th>
+                <th class="amount-cell">金额</th>
+                <th class="action-cell">操作</th>
+              </tr>
+            </thead>
+            <tbody id="transactionRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="assets/app.js"></script>
 </body>
 </html>
