@@ -23,16 +23,16 @@ const state = {
   accounts: loadAccounts(),
   pendingTransactions: [],
   selectedFile: null,
-  month: getCurrentMonth(),
-  selectedMonths: [getCurrentMonth()],
-  selectedAccountIds: [],
+  startMonth: getCurrentMonth(),
+  endMonth: getCurrentMonth(),
+  selectedAccountId: "all",
   categoryFilter: "all",
 };
 
 const elements = {
-  monthInput: document.querySelector("#monthInput"),
-  monthFilterList: document.querySelector("#monthFilterList"),
-  accountFilterList: document.querySelector("#accountFilterList"),
+  startMonthInput: document.querySelector("#startMonthInput"),
+  endMonthInput: document.querySelector("#endMonthInput"),
+  accountFilterInput: document.querySelector("#accountFilterInput"),
   incomeTotal: document.querySelector("#incomeTotal"),
   expenseTotal: document.querySelector("#expenseTotal"),
   balanceTotal: document.querySelector("#balanceTotal"),
@@ -70,7 +70,8 @@ const elements = {
 init();
 
 function init() {
-  elements.monthInput.value = state.month;
+  elements.startMonthInput.value = state.startMonth;
+  elements.endMonthInput.value = state.endMonth;
   elements.dateInput.value = getToday();
   renderCategoryOptions();
   renderAccountOptions();
@@ -80,12 +81,16 @@ function init() {
 }
 
 function bindEvents() {
-  elements.monthInput.addEventListener("change", () => {
-    const month = elements.monthInput.value || getCurrentMonth();
-    state.month = month;
-    if (!state.selectedMonths.includes(month)) {
-      state.selectedMonths = [...state.selectedMonths, month].sort();
-    }
+  elements.startMonthInput.addEventListener("change", () => {
+    setMonthRange(elements.startMonthInput.value, state.endMonth);
+  });
+
+  elements.endMonthInput.addEventListener("change", () => {
+    setMonthRange(state.startMonth, elements.endMonthInput.value);
+  });
+
+  elements.accountFilterInput.addEventListener("change", () => {
+    state.selectedAccountId = elements.accountFilterInput.value || "all";
     render();
   });
 
@@ -169,24 +174,6 @@ function bindEvents() {
     deleteTransaction(button.dataset.deleteId);
   });
 
-  elements.monthFilterList.addEventListener("change", (event) => {
-    const input = event.target.closest("[data-month-filter]");
-    if (!input) {
-      return;
-    }
-
-    updateSelectedMonths(input.dataset.monthFilter, input.checked);
-  });
-
-  elements.accountFilterList.addEventListener("change", (event) => {
-    const input = event.target.closest("[data-account-filter-id]");
-    if (!input) {
-      return;
-    }
-
-    updateSelectedAccounts(input.dataset.accountFilterId, input.checked);
-  });
-
   elements.accountForm.addEventListener("submit", (event) => {
     event.preventDefault();
     addAccount();
@@ -253,7 +240,7 @@ async function importSelectedFile() {
   try {
     const result = await analyzeLedgerFile(state.selectedFile, {
       endpoint: getAiImportEndpoint(),
-      fallbackYear: Number(state.month.slice(0, 4)),
+      fallbackYear: Number(state.startMonth.slice(0, 4)),
     });
 
     if (result.transactions.length === 0) {
@@ -322,8 +309,7 @@ function exportTransactions() {
   }
 
   const csv = toCsv(transactions, { accountNameById: getAccountNameById() });
-  const monthSuffix =
-    state.selectedMonths.length === 1 ? state.selectedMonths[0] : state.selectedMonths.join("_");
+  const monthSuffix = getMonthRangeLabel();
   const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -353,27 +339,10 @@ function deleteTransaction(id) {
   render();
 }
 
-function updateSelectedMonths(month, isSelected) {
-  state.selectedMonths = isSelected
-    ? [...new Set([...state.selectedMonths, month])].sort()
-    : state.selectedMonths.filter((selectedMonth) => selectedMonth !== month);
-
-  if (state.selectedMonths.length === 0) {
-    state.selectedMonths = [getCurrentMonth()];
-  }
-  render();
-}
-
-function updateSelectedAccounts(accountId, isSelected) {
-  if (accountId === "all") {
-    state.selectedAccountIds = [];
-    render();
-    return;
-  }
-
-  state.selectedAccountIds = isSelected
-    ? [...new Set([...state.selectedAccountIds, accountId])]
-    : state.selectedAccountIds.filter((selectedId) => selectedId !== accountId);
+function setMonthRange(startMonth, endMonth) {
+  const [normalizedStart, normalizedEnd] = normalizeMonthRange(startMonth, endMonth);
+  state.startMonth = normalizedStart;
+  state.endMonth = normalizedEnd;
   render();
 }
 
@@ -422,7 +391,9 @@ function renameAccount(id, nextName) {
 function deleteAccount(id) {
   const account = state.accounts.find((item) => item.id === id);
   state.accounts = state.accounts.filter((item) => item.id !== id);
-  state.selectedAccountIds = state.selectedAccountIds.filter((accountId) => accountId !== id);
+  if (state.selectedAccountId === id) {
+    state.selectedAccountId = "all";
+  }
   state.transactions = state.transactions.map((transaction) =>
     transaction.accountId === id ? { ...transaction, accountId: undefined } : transaction,
   );
@@ -433,8 +404,7 @@ function deleteAccount(id) {
 }
 
 function render() {
-  renderMonthFilters();
-  renderAccountFilters();
+  renderDashboardFilters();
   renderSummary();
   renderAccountOptions();
   renderAccountList();
@@ -445,8 +415,8 @@ function render() {
 
 function renderSummary() {
   const summary = summarizeSelection(state.transactions, {
-    months: state.selectedMonths,
-    accountIds: state.selectedAccountIds,
+    months: getSelectedMonths(),
+    accountIds: getSelectedAccountIds(),
   });
   elements.incomeTotal.textContent = formatMoney(summary.income);
   elements.expenseTotal.textContent = formatMoney(summary.expense);
@@ -469,8 +439,8 @@ function renderCategoryFilter() {
     "all",
     ...new Set(
       filterLedgerTransactions(state.transactions, {
-        months: state.selectedMonths,
-        accountIds: state.selectedAccountIds,
+        months: getSelectedMonths(),
+        accountIds: getSelectedAccountIds(),
       }).map((transaction) => transaction.category),
     ),
   ];
@@ -552,46 +522,25 @@ function renderAccountList() {
   );
 }
 
-function renderMonthFilters() {
-  replaceChildrenCompat(
-    elements.monthFilterList,
-    ...getAvailableMonths().map((month) => {
-      const label = document.createElement("label");
-      label.className = "check-pill";
-      label.innerHTML = `
-        <input type="checkbox" data-month-filter="${escapeHtml(month)}" ${
-          state.selectedMonths.includes(month) ? "checked" : ""
-        } />
-        <span>${escapeHtml(month)}</span>
-      `;
-      return label;
-    }),
-  );
-}
+function renderDashboardFilters() {
+  const [startMonth, endMonth] = normalizeMonthRange(state.startMonth, state.endMonth);
+  state.startMonth = startMonth;
+  state.endMonth = endMonth;
+  elements.startMonthInput.value = startMonth;
+  elements.endMonthInput.value = endMonth;
 
-function renderAccountFilters() {
-  const allLabel = document.createElement("label");
-  allLabel.className = "check-pill";
-  allLabel.innerHTML = `
-    <input type="checkbox" data-account-filter-id="all" ${
-      state.selectedAccountIds.length === 0 ? "checked" : ""
-    } />
-    <span>全部账户</span>
-  `;
+  const accountOptions = [
+    createOption("all", "全部账户"),
+    createOption(UNASSIGNED_ACCOUNT_ID, UNASSIGNED_ACCOUNT_NAME),
+    ...state.accounts.map((account) => createOption(account.id, account.name)),
+  ];
+  const accountValues = new Set(accountOptions.map((option) => option.value));
+  if (!accountValues.has(state.selectedAccountId)) {
+    state.selectedAccountId = "all";
+  }
 
-  const accountLabels = getVisibleAccountIds().map((accountId) => {
-    const label = document.createElement("label");
-    label.className = "check-pill";
-    label.innerHTML = `
-      <input type="checkbox" data-account-filter-id="${escapeHtml(accountId)}" ${
-        state.selectedAccountIds.includes(accountId) ? "checked" : ""
-      } />
-      <span>${escapeHtml(getAccountName(accountId))}</span>
-    `;
-    return label;
-  });
-
-  replaceChildrenCompat(elements.accountFilterList, allLabel, ...accountLabels);
+  replaceChildrenCompat(elements.accountFilterInput, ...accountOptions);
+  elements.accountFilterInput.value = state.selectedAccountId;
 }
 
 function createOption(value, label) {
@@ -617,20 +566,44 @@ function getAccountNameById() {
   return Object.fromEntries(state.accounts.map((account) => [account.id, account.name]));
 }
 
-function getAvailableMonths() {
-  return [
-    ...new Set([
-      getCurrentMonth(),
-      ...state.selectedMonths,
-      ...state.transactions.map((transaction) => String(transaction.date || "").slice(0, 7)),
-    ]),
-  ]
-    .filter((month) => /^\d{4}-\d{2}$/u.test(month))
-    .sort();
+function getSelectedMonths() {
+  const [startMonth, endMonth] = normalizeMonthRange(state.startMonth, state.endMonth);
+  const months = [];
+  let cursor = startMonth;
+
+  while (cursor <= endMonth) {
+    months.push(cursor);
+    cursor = getNextMonth(cursor);
+  }
+
+  return months;
 }
 
-function getVisibleAccountIds() {
-  return [UNASSIGNED_ACCOUNT_ID, ...state.accounts.map((account) => account.id)];
+function getSelectedAccountIds() {
+  return state.selectedAccountId === "all" ? [] : [state.selectedAccountId];
+}
+
+function getMonthRangeLabel() {
+  const [startMonth, endMonth] = normalizeMonthRange(state.startMonth, state.endMonth);
+  return startMonth === endMonth ? startMonth : `${startMonth}_${endMonth}`;
+}
+
+function normalizeMonthRange(startMonth, endMonth) {
+  const currentMonth = getCurrentMonth();
+  const safeStart = isMonthKey(startMonth) ? startMonth : currentMonth;
+  const safeEnd = isMonthKey(endMonth) ? endMonth : currentMonth;
+  return safeStart <= safeEnd ? [safeStart, safeEnd] : [safeEnd, safeStart];
+}
+
+function getNextMonth(monthKey) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  return `${nextYear}-${String(nextMonth).padStart(2, "0")}`;
+}
+
+function isMonthKey(value) {
+  return /^\d{4}-\d{2}$/u.test(String(value || ""));
 }
 
 function createCategoryBar(item, maxAmount) {
@@ -708,8 +681,8 @@ function createPendingRow(transaction) {
 
 function getVisibleTransactions() {
   return filterLedgerTransactions(state.transactions, {
-    months: state.selectedMonths,
-    accountIds: state.selectedAccountIds,
+    months: getSelectedMonths(),
+    accountIds: getSelectedAccountIds(),
   })
     .filter(
       (transaction) =>

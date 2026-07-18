@@ -215,50 +215,17 @@ textarea {
 
 .dashboard-filters {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
 
-.filter-group {
-  margin: 0;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fbfcfa;
-}
-
-.filter-group legend {
-  padding: 0 4px;
+.account-filter-control {
+  display: grid;
+  gap: 7px;
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.checklist {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.check-pill {
-  display: inline-flex;
-  width: auto;
-  min-height: 34px;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 6px 10px;
-  background: #ffffff;
-  color: var(--ink);
   font-size: 13px;
-}
-
-.check-pill input {
-  width: 16px;
-  min-height: 16px;
-  margin: 0;
+  font-weight: 700;
 }
 
 textarea {

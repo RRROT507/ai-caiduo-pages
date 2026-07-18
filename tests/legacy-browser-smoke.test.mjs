@@ -65,8 +65,13 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
       1,
     );
 
-    await page.fill("#monthInput", "2026-07");
-    await page.dispatchEvent("#monthInput", "change");
+    assert.equal(await page.locator("#monthFilterList").count(), 0);
+    assert.equal(await page.locator("#accountFilterList").count(), 0);
+    await page.fill("#startMonthInput", "2026-07");
+    await page.fill("#endMonthInput", "2026-07");
+    await page.dispatchEvent("#startMonthInput", "change");
+    await page.dispatchEvent("#endMonthInput", "change");
+    await page.selectOption("#accountFilterInput", "all");
 
     await page.selectOption("#accountInput", "cmb-credit-card");
     await page.fill("#dateInput", "2026-07-02");
@@ -82,16 +87,17 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
     await page.fill("#descriptionInput", "工资入账");
     await page.click("#entryForm button[type=submit]");
 
-    await page.check('[data-month-filter="2026-08"]');
+    await page.fill("#endMonthInput", "2026-08");
+    await page.dispatchEvent("#endMonthInput", "change");
     assert.equal(await page.locator("#transactionRows tr").count(), 2);
     assert.equal(await page.locator("#transactionCount").textContent(), "2");
 
-    await page.check('[data-account-filter-id="wechat"]');
+    await page.selectOption("#accountFilterInput", "wechat");
     assert.equal(await page.locator("#transactionRows tr").count(), 1);
     assert.ok(await page.locator("#transactionRows").getByText("微信").isVisible());
     assert.equal(await page.locator("#transactionCount").textContent(), "1");
 
-    await page.check('[data-account-filter-id="all"]');
+    await page.selectOption("#accountFilterInput", "all");
 
     await page.setInputFiles("#fileInput", {
       name: "cmb-statement.txt",
@@ -124,7 +130,7 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
     await page.click("#confirmImportButton");
     await page.waitForTimeout(300);
 
-    await page.check('[data-account-filter-id="alipay"]');
+    await page.selectOption("#accountFilterInput", "alipay");
     const alipayRows = await page.locator("#transactionRows tr").allTextContents();
     assert.equal(alipayRows.length, 1);
     assert.match(alipayRows[0], /支付宝/u);

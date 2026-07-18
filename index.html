@@ -37,21 +37,21 @@
             <p class="eyebrow">月度概览</p>
             <h2 id="overview-title">现金流看板</h2>
           </div>
-          <label class="month-control">
-            <span>添加月份</span>
-            <input id="monthInput" type="month" />
-          </label>
         </div>
 
         <div class="dashboard-filters" aria-label="看板筛选">
-          <fieldset class="filter-group">
-            <legend>月份</legend>
-            <div id="monthFilterList" class="checklist" aria-label="筛选月份"></div>
-          </fieldset>
-          <fieldset class="filter-group">
-            <legend>账户</legend>
-            <div id="accountFilterList" class="checklist" aria-label="筛选账户"></div>
-          </fieldset>
+          <label class="month-control">
+            <span>开始月份</span>
+            <input id="startMonthInput" type="month" />
+          </label>
+          <label class="month-control">
+            <span>结束月份</span>
+            <input id="endMonthInput" type="month" />
+          </label>
+          <label class="account-filter-control">
+            <span>账户</span>
+            <select id="accountFilterInput" aria-label="筛选账户"></select>
+          </label>
         </div>
 
         <div class="metric-grid">
