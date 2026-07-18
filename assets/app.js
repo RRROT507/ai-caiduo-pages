@@ -1,19 +1,13 @@
-import {
-  inferCategory,
-  parseLedgerText,
-  summarizeMonth,
-  toCsv,
-} from "./ledger-core.mjs";
+import { analyzeLedgerFile } from "./ledger-importer.mjs";
+import { inferCategory, summarizeMonth, toCsv } from "./ledger-core.mjs";
 
 const STORAGE_KEY = "ai-caiduo-transactions-v1";
 const CATEGORIES = ["餐饮", "交通", "购物", "居家", "医疗", "娱乐", "学习", "收入", "其他"];
-const SAMPLE_TEXT = `2026-07-02 星巴克咖啡 -32.50
-2026/07/03 工资入账 12000.00 收入
-07-04 滴滴出行 支出 48.20
-2026-07-05 超市购物 -168.90`;
 
 const state = {
   transactions: loadTransactions(),
+  pendingTransactions: [],
+  selectedFile: null,
   month: getCurrentMonth(),
   categoryFilter: "all",
 };
@@ -32,10 +26,15 @@ const elements = {
   amountInput: document.querySelector("#amountInput"),
   categoryInput: document.querySelector("#categoryInput"),
   descriptionInput: document.querySelector("#descriptionInput"),
-  pasteInput: document.querySelector("#pasteInput"),
-  sampleButton: document.querySelector("#sampleButton"),
+  fileInput: document.querySelector("#fileInput"),
+  fileName: document.querySelector("#fileName"),
   importButton: document.querySelector("#importButton"),
   importStatus: document.querySelector("#importStatus"),
+  pendingPanel: document.querySelector("#pendingPanel"),
+  pendingRows: document.querySelector("#pendingRows"),
+  pendingCount: document.querySelector("#pendingCount"),
+  confirmImportButton: document.querySelector("#confirmImportButton"),
+  discardImportButton: document.querySelector("#discardImportButton"),
   categoryFilter: document.querySelector("#categoryFilter"),
   exportButton: document.querySelector("#exportButton"),
   clearButton: document.querySelector("#clearButton"),
@@ -80,13 +79,42 @@ function bindEvents() {
     addManualTransaction();
   });
 
-  elements.sampleButton.addEventListener("click", () => {
-    elements.pasteInput.value = SAMPLE_TEXT;
-    elements.pasteInput.focus();
+  elements.fileInput.addEventListener("change", () => {
+    state.selectedFile = elements.fileInput.files?.[0] || null;
+    elements.fileName.textContent = state.selectedFile ? state.selectedFile.name : "尚未选择文件";
+    state.pendingTransactions = [];
+    renderPendingImport();
+    setImportStatus("");
   });
 
   elements.importButton.addEventListener("click", () => {
-    importPastedTransactions();
+    importSelectedFile();
+  });
+
+  elements.confirmImportButton.addEventListener("click", () => {
+    confirmPendingImport();
+  });
+
+  elements.discardImportButton.addEventListener("click", () => {
+    discardPendingImport("已放弃本次识别结果");
+  });
+
+  elements.pendingRows.addEventListener("change", (event) => {
+    const select = event.target.closest("[data-pending-category-id]");
+    if (!select) {
+      return;
+    }
+
+    updatePendingCategory(select.dataset.pendingCategoryId, select.value);
+  });
+
+  elements.pendingRows.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-delete-pending-id]");
+    if (!button) {
+      return;
+    }
+
+    deletePendingTransaction(button.dataset.deletePendingId);
   });
 
   elements.categoryFilter.addEventListener("change", () => {
@@ -140,22 +168,77 @@ function addManualTransaction() {
   render();
 }
 
-function importPastedTransactions() {
-  const parsed = parseLedgerText(elements.pasteInput.value, {
-    fallbackYear: Number(state.month.slice(0, 4)),
-  });
-
-  if (parsed.length === 0) {
-    setImportStatus("没有识别到可导入交易");
+async function importSelectedFile() {
+  if (!state.selectedFile) {
+    setImportStatus("请先选择账单文件");
     return;
   }
 
-  const imported = parsed.map(withId);
+  elements.importButton.disabled = true;
+  setImportStatus("正在识别账单文件...");
+
+  try {
+    const result = await analyzeLedgerFile(state.selectedFile, {
+      endpoint: getAiImportEndpoint(),
+      fallbackYear: Number(state.month.slice(0, 4)),
+    });
+
+    if (result.transactions.length === 0) {
+      state.pendingTransactions = [];
+      renderPendingImport();
+      setImportStatus(result.message || "没有识别到可导入交易");
+      return;
+    }
+
+    state.pendingTransactions = result.transactions.map((transaction) => ({
+      ...transaction,
+      previewId: createId(),
+    }));
+    renderPendingImport();
+    setImportStatus(`${result.message}，请确认后入账`);
+  } catch {
+    state.pendingTransactions = [];
+    renderPendingImport();
+    setImportStatus("识别失败，请换一个可复制文字的账单文件");
+  } finally {
+    elements.importButton.disabled = false;
+  }
+}
+
+function confirmPendingImport() {
+  if (state.pendingTransactions.length === 0) {
+    setImportStatus("没有待确认交易");
+    return;
+  }
+
+  const imported = state.pendingTransactions.map(({ previewId, ...transaction }) =>
+    withId(transaction),
+  );
   state.transactions = [...imported, ...state.transactions];
+  state.pendingTransactions = [];
   persist();
-  elements.pasteInput.value = "";
-  setImportStatus(`已导入 ${imported.length} 笔`);
+  clearSelectedFile();
+  setImportStatus(`已入账 ${imported.length} 笔`);
   render();
+}
+
+function discardPendingImport(message = "") {
+  state.pendingTransactions = [];
+  renderPendingImport();
+  setImportStatus(message);
+}
+
+function deletePendingTransaction(previewId) {
+  state.pendingTransactions = state.pendingTransactions.filter(
+    (transaction) => transaction.previewId !== previewId,
+  );
+  renderPendingImport();
+}
+
+function updatePendingCategory(previewId, category) {
+  state.pendingTransactions = state.pendingTransactions.map((transaction) =>
+    transaction.previewId === previewId ? { ...transaction, category } : transaction,
+  );
 }
 
 function exportTransactions() {
@@ -198,6 +281,7 @@ function render() {
   renderSummary();
   renderCategoryFilter();
   renderTransactions();
+  renderPendingImport();
 }
 
 function renderSummary() {
@@ -246,6 +330,14 @@ function renderTransactions() {
   const transactions = getVisibleTransactions();
   elements.emptyState.classList.toggle("is-hidden", transactions.length > 0);
   replaceChildrenCompat(elements.transactionRows, ...transactions.map(createTransactionRow));
+}
+
+function renderPendingImport() {
+  const hasPending = state.pendingTransactions.length > 0;
+  elements.pendingPanel.classList.toggle("is-hidden", !hasPending);
+  elements.pendingCount.textContent = `${state.pendingTransactions.length} 笔`;
+  elements.confirmImportButton.disabled = !hasPending;
+  replaceChildrenCompat(elements.pendingRows, ...state.pendingTransactions.map(createPendingRow));
 }
 
 function renderCategoryOptions() {
@@ -297,6 +389,36 @@ function createTransactionRow(transaction) {
     <td data-label="操作" class="action-cell">
       <button class="delete-button" type="button" data-delete-id="${escapeHtml(
         transaction.id,
+      )}">删除</button>
+    </td>
+  `;
+  return row;
+}
+
+function createPendingRow(transaction) {
+  const row = document.createElement("tr");
+  const isIncome = transaction.direction === "income";
+  row.innerHTML = `
+    <td data-label="日期">${escapeHtml(transaction.date)}</td>
+    <td data-label="说明">${escapeHtml(transaction.description)}</td>
+    <td data-label="分类">
+      <select class="compact-select" data-pending-category-id="${escapeHtml(
+        transaction.previewId,
+      )}" aria-label="调整分类">
+        ${CATEGORIES.map(
+          (category) =>
+            `<option value="${escapeHtml(category)}" ${
+              category === transaction.category ? "selected" : ""
+            }>${escapeHtml(category)}</option>`,
+        ).join("")}
+      </select>
+    </td>
+    <td data-label="金额" class="amount-cell ${isIncome ? "income-text" : "expense-text"}">${escapeHtml(
+      formatSignedMoney(transaction.amount),
+    )}</td>
+    <td data-label="操作" class="action-cell">
+      <button class="delete-button" type="button" data-delete-pending-id="${escapeHtml(
+        transaction.previewId,
       )}">删除</button>
     </td>
   `;
@@ -371,12 +493,23 @@ function isValidTransaction(transaction) {
   );
 }
 
+function clearSelectedFile() {
+  state.selectedFile = null;
+  elements.fileInput.value = "";
+  elements.fileName.textContent = "尚未选择文件";
+}
+
 function setImportStatus(message) {
   elements.importStatus.textContent = message;
-  window.clearTimeout(setImportStatus.timeoutId);
-  setImportStatus.timeoutId = window.setTimeout(() => {
-    elements.importStatus.textContent = "";
-  }, 3200);
+}
+
+function getAiImportEndpoint() {
+  const globalEndpoint = globalThis.AI_CAIDUO_IMPORT_ENDPOINT;
+  if (typeof globalEndpoint === "string" && globalEndpoint.trim()) {
+    return globalEndpoint.trim();
+  }
+
+  return document.querySelector('meta[name="ai-import-endpoint"]')?.content?.trim() || "";
 }
 
 function formatMoney(amount) {

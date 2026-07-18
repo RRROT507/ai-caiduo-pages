@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 const rootDir = fileURLToPath(new URL("../", import.meta.url));
 const edgePath = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 
-test("initializes and imports transactions when replaceChildren is unavailable", async (t) => {
+test("uploads a statement file and confirms recognized transactions", async (t) => {
   if (!existsSync(edgePath)) {
     t.skip("Microsoft Edge is not available in this environment");
     return;
@@ -48,12 +48,23 @@ test("initializes and imports transactions when replaceChildren is unavailable",
     await page.evaluate(() => localStorage.clear());
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.fill("#monthInput", "2026-07");
-    await page.click("#sampleButton");
+    await page.setInputFiles("#fileInput", {
+      name: "cmb-statement.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(`2026-07-02 星巴克咖啡 -32.50
+2026/07/03 工资入账 12000.00 收入
+07-04 滴滴出行 支出 48.20
+2026-07-05 超市购物 -168.90`),
+    });
     await page.click("#importButton");
     await page.waitForTimeout(300);
 
     assert.equal(errors.join(" | "), "");
     assert.ok((await page.locator("#categoryInput option").count()) > 0);
+    assert.equal(await page.locator("#pendingRows tr").count(), 4);
+    assert.equal(await page.locator("#transactionRows tr").count(), 0);
+    await page.click("#confirmImportButton");
+    await page.waitForTimeout(300);
     assert.equal(await page.locator("#transactionRows tr").count(), 4);
   } finally {
     await browser.close();

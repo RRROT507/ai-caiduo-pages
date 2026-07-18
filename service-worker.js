@@ -1,10 +1,11 @@
-const CACHE_NAME = "ai-caiduo-v2";
+const CACHE_NAME = "ai-caiduo-v3";
 const APP_SHELL = [
   "./",
   "index.html",
   "assets/styles.css",
   "assets/app.js",
   "assets/ledger-core.mjs",
+  "assets/ledger-importer.mjs",
   "assets/icons/icon-192.png",
   "assets/icons/icon-512.png",
   "manifest.webmanifest",

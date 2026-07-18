@@ -126,20 +126,57 @@
       <section class="import-panel" aria-labelledby="import-title">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">账单文本</p>
-            <h2 id="import-title">粘贴导入</h2>
+            <p class="eyebrow">账单文件</p>
+            <h2 id="import-title">上传识别</h2>
           </div>
-          <button id="sampleButton" class="ghost-button" type="button">填入示例</button>
         </div>
-        <textarea
-          id="pasteInput"
-          rows="8"
-          spellcheck="false"
-          placeholder="2026-07-02 星巴克咖啡 -32.50&#10;2026/07/03 工资入账 12000.00 收入&#10;07-04 滴滴出行 支出 48.20"
-        ></textarea>
+
+        <label class="file-drop" for="fileInput">
+          <input
+            id="fileInput"
+            type="file"
+            accept=".pdf,.txt,.csv,.tsv,.ofx,.qfx,application/pdf,text/plain,text/csv"
+          />
+          <span class="file-drop-title">选择本地账单文件</span>
+          <span class="file-drop-subtitle">首版支持招商银行可复制文字电子账单；扫描件需接入 AI/OCR 后识别。</span>
+        </label>
+
+        <div class="file-meta">
+          <strong id="fileName">尚未选择文件</strong>
+          <span>文件只在当前浏览器中处理；确认入账前不会保存交易。</span>
+        </div>
+
         <div class="action-row">
-          <button id="importButton" class="primary-button" type="button">解析并导入</button>
+          <button id="importButton" class="primary-button" type="button">识别并预览</button>
           <span id="importStatus" role="status" aria-live="polite"></span>
+        </div>
+
+        <div id="pendingPanel" class="pending-panel is-hidden">
+          <div class="section-heading pending-heading">
+            <div>
+              <p class="eyebrow">待确认</p>
+              <h3>识别结果</h3>
+            </div>
+            <span id="pendingCount">0 笔</span>
+          </div>
+          <div class="table-wrap pending-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>日期</th>
+                  <th>说明</th>
+                  <th>分类</th>
+                  <th class="amount-cell">金额</th>
+                  <th class="action-cell">操作</th>
+                </tr>
+              </thead>
+              <tbody id="pendingRows"></tbody>
+            </table>
+          </div>
+          <div class="action-row">
+            <button id="confirmImportButton" class="primary-button" type="button">确认入账</button>
+            <button id="discardImportButton" class="ghost-button" type="button">放弃本次结果</button>
+          </div>
         </div>
       </section>
 
@@ -157,7 +194,7 @@
         </div>
         <div id="emptyState" class="empty-state">
           <strong>还没有交易</strong>
-          <span>添加一笔记录，或粘贴账单文本导入。</span>
+          <span>添加一笔记录，或上传账单文件识别入账。</span>
         </div>
         <div class="table-wrap">
           <table>

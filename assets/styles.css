@@ -46,6 +46,11 @@ button {
   font-weight: 700;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -205,6 +210,43 @@ textarea {
   line-height: 1.6;
 }
 
+.file-drop {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 1px dashed rgba(31, 138, 112, 0.42);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.file-drop input {
+  background: #ffffff;
+}
+
+.file-drop-title {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.file-drop-subtitle,
+.file-meta span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.file-meta {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.file-meta strong {
+  color: var(--green-dark);
+  overflow-wrap: anywhere;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -349,6 +391,46 @@ textarea {
   color: var(--muted);
   font-size: 13px;
   font-weight: 700;
+}
+
+.pending-panel {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.pending-heading {
+  margin-bottom: 10px;
+}
+
+#pendingCount {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.pending-table {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.pending-table table {
+  min-width: 0;
+}
+
+.pending-table th,
+.pending-table td {
+  padding: 10px 8px;
+  font-size: 13px;
+}
+
+.pending-table .action-cell {
+  width: 58px;
+}
+
+.compact-select {
+  min-height: 34px;
+  padding: 6px 8px;
 }
 
 .transactions-heading {
