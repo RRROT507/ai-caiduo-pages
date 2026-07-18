@@ -207,7 +207,7 @@ function renderSummary() {
   elements.balanceTotal.textContent = formatMoney(summary.balance);
   elements.transactionCount.textContent = String(summary.count);
 
-  elements.categoryBars.replaceChildren();
+  replaceChildrenCompat(elements.categoryBars);
   elements.categoryHint.textContent =
     summary.categoryTotals.length === 0 ? "暂无支出" : `${summary.categoryTotals.length} 类支出`;
 
@@ -228,7 +228,8 @@ function renderCategoryFilter() {
     ),
   ];
 
-  elements.categoryFilter.replaceChildren(
+  replaceChildrenCompat(
+    elements.categoryFilter,
     ...categories.map((category) => {
       const option = document.createElement("option");
       option.value = category;
@@ -244,11 +245,12 @@ function renderCategoryFilter() {
 function renderTransactions() {
   const transactions = getVisibleTransactions();
   elements.emptyState.classList.toggle("is-hidden", transactions.length > 0);
-  elements.transactionRows.replaceChildren(...transactions.map(createTransactionRow));
+  replaceChildrenCompat(elements.transactionRows, ...transactions.map(createTransactionRow));
 }
 
 function renderCategoryOptions() {
-  elements.categoryInput.replaceChildren(
+  replaceChildrenCompat(
+    elements.categoryInput,
     ...CATEGORIES.map((category) => {
       const option = document.createElement("option");
       option.value = category;
@@ -313,10 +315,33 @@ function getVisibleTransactions() {
 
 function withId(transaction) {
   return {
-    id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+    id: createId(),
     createdAt: new Date().toISOString(),
     ...transaction,
   };
+}
+
+function replaceChildrenCompat(parent, ...children) {
+  if (typeof parent.replaceChildren === "function") {
+    parent.replaceChildren(...children);
+    return;
+  }
+
+  while (parent.firstChild) {
+    parent.removeChild(parent.firstChild);
+  }
+
+  for (const child of children) {
+    parent.appendChild(child);
+  }
+}
+
+function createId() {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function loadTransactions() {
