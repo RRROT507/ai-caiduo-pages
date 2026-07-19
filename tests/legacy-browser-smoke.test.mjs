@@ -266,6 +266,47 @@ Transaction Date Currency Amount Balance Description
     const manuallyOverriddenNewAccountRows = await page.locator("#transactionRows tr").allTextContents();
     assert.equal(manuallyOverriddenNewAccountRows.length, 3);
     assert.match(manuallyOverriddenNewAccountRows.join("\n"), /Manual new-account override/u);
+
+    await page.evaluate(() => {
+      const accounts = JSON.parse(localStorage.getItem("ai-caiduo-accounts-v1"));
+      localStorage.setItem(
+        "ai-caiduo-accounts-v1",
+        JSON.stringify(
+          accounts.map((account) =>
+            account.id === "cmb-credit-card"
+              ? {
+                  ...account,
+                  name: "招商银行信用卡 尾号1755",
+                  institution: "招商银行",
+                  accountNumberLast4: "1755",
+                  accountFingerprint: "cmb-credit-card:1755",
+                }
+              : account,
+          ),
+        ),
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.setInputFiles("#fileInput", {
+      name: "cmb-credit-card-overlap-statement.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(`招商银行信用卡对账单（个人消费卡账户 2026年03月）
+CMB Credit Card Statement (2026.03)
+03/06 掌上生活还款 -30,435.91 6746 -30,435.91
+03/01 03/01 增值服务使用费-用卡安全保障 5.00 1755 5.00`),
+    });
+    await page.click("#importButton");
+    await page.waitForTimeout(300);
+    assert.match(
+      await page.locator("#detectedAccountPanel").textContent(),
+      /已匹配账户：招商银行信用卡 尾号1755/u,
+    );
+    await page.click("#confirmImportButton");
+    await page.waitForTimeout(300);
+    assert.equal(
+      await page.locator("#accountList input[value='招商银行信用卡 尾号1755/6746']").count(),
+      0,
+    );
   } finally {
     await browser.close();
     await server.close();

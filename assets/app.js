@@ -1080,6 +1080,11 @@ function resolveImportAccountCandidate(candidate) {
     return { mode: "matched", accountId: byFingerprint.id, candidate };
   }
 
+  const byCreditCardOverlap = findCmbCreditCardAccountByOverlap(candidate);
+  if (byCreditCardOverlap) {
+    return { mode: "matched", accountId: byCreditCardOverlap.id, candidate };
+  }
+
   const accountName = String(candidate.accountName || "").trim();
   const byName = accountName
     ? state.accounts.find((account) => account.name === accountName)
@@ -1089,6 +1094,37 @@ function resolveImportAccountCandidate(candidate) {
   }
 
   return { mode: "new", accountId: "", candidate };
+}
+
+function findCmbCreditCardAccountByOverlap(candidate) {
+  const candidateNumbers = parseCmbCreditCardFingerprint(candidate.accountFingerprint);
+  if (candidateNumbers.size === 0) {
+    return null;
+  }
+
+  return (
+    state.accounts.find((account) => {
+      const accountNumbers = parseCmbCreditCardFingerprint(account.accountFingerprint);
+      if (accountNumbers.size === 0) {
+        return false;
+      }
+      return [...candidateNumbers].some((number) => accountNumbers.has(number));
+    }) || null
+  );
+}
+
+function parseCmbCreditCardFingerprint(fingerprint) {
+  const value = String(fingerprint || "").trim();
+  if (!value.startsWith("cmb-credit-card:")) {
+    return new Set();
+  }
+
+  return new Set(
+    value
+      .slice("cmb-credit-card:".length)
+      .split("-")
+      .filter((token) => /^\d{4}$/u.test(token)),
+  );
 }
 
 function createAccountFromCandidate(candidate) {
