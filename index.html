@@ -110,14 +110,15 @@
           </label>
           <label>
             <span>类型</span>
-            <select id="directionInput" name="direction" required>
-              <option value="expense">支出</option>
-              <option value="income">收入</option>
-            </select>
+            <select id="directionInput" name="direction" required></select>
           </label>
           <label>
-            <span>账户</span>
+            <span id="accountInputLabel">账户</span>
             <select id="accountInput" name="account"></select>
+          </label>
+          <label id="transferToAccountField" class="is-hidden">
+            <span>转入账户</span>
+            <select id="transferToAccountInput" name="transferToAccount"></select>
           </label>
           <label>
             <span>金额</span>

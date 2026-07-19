@@ -46,7 +46,7 @@ test("analyzes a local statement text file with fallback parsing", async () => {
         description: "工资入账",
         amount: 12000,
         direction: "income",
-        category: "收入",
+        category: "工资",
         source: "file",
       },
       {
@@ -75,6 +75,13 @@ test("normalizes transactions returned by an AI import endpoint", async () => {
         amount: "10000",
         direction: "income",
       },
+      {
+        date: "2026-07-07",
+        description: "账户互转",
+        amount: "-200",
+        type: "transfer",
+        category: "收入",
+      },
     ],
   });
   const file = new File(["ignored"], "cmb-statement.pdf", { type: "application/pdf" });
@@ -88,21 +95,27 @@ test("normalizes transactions returned by an AI import endpoint", async () => {
     assert.equal(result.mode, "ai");
     assert.equal(result.message, "AI 已生成预览");
     assert.deepEqual(
-      result.transactions.map(({ date, description, amount, direction, category, source }) => ({
+      result.transactions.map(
+        ({ date, description, amount, direction, type, transferMatch, category, source }) => ({
         date,
         description,
         amount,
         direction,
+        type,
+        transferMatch,
         category,
         source,
-      })),
+        }),
+      ),
       [
         {
           date: "2026-07-05",
           description: "招商银行还款",
           amount: -500,
           direction: "expense",
-          category: "其他",
+          type: undefined,
+          transferMatch: undefined,
+          category: "其他支出",
           source: "ai",
         },
         {
@@ -110,7 +123,19 @@ test("normalizes transactions returned by an AI import endpoint", async () => {
           description: "工资",
           amount: 10000,
           direction: "income",
-          category: "收入",
+          type: undefined,
+          transferMatch: undefined,
+          category: "工资",
+          source: "ai",
+        },
+        {
+          date: "2026-07-07",
+          description: "账户互转",
+          amount: -200,
+          direction: "expense",
+          type: "transfer",
+          transferMatch: "explicit",
+          category: "转账",
           source: "ai",
         },
       ],
@@ -226,7 +251,7 @@ Amount
         description: "朝朝宝转出",
         amount: 31.74,
         direction: "income",
-        category: "收入",
+        category: "利息",
         source: "file",
       },
       {
@@ -234,7 +259,7 @@ Amount
         description: "转账汇款 薛瑾 6214831001555389",
         amount: -4000,
         direction: "expense",
-        category: "其他",
+        category: "其他支出",
         source: "file",
       },
       {
@@ -242,7 +267,7 @@ Amount
         description: "汇入汇款 张凯 6214680067553394",
         amount: 4000,
         direction: "income",
-        category: "收入",
+        category: "其他收入",
         source: "file",
       },
     ],
@@ -295,7 +320,7 @@ test("parses China Merchants Bank credit card statement rows", () => {
         description: "掌上生活还款",
         amount: 30435.91,
         direction: "income",
-        category: "收入",
+        category: "其他收入",
         source: "file",
       },
       {
@@ -303,7 +328,7 @@ test("parses China Merchants Bank credit card statement rows", () => {
         description: "掌上生活还款回馈金",
         amount: 3,
         direction: "income",
-        category: "收入",
+        category: "退款",
         source: "file",
       },
       {
@@ -311,7 +336,7 @@ test("parses China Merchants Bank credit card statement rows", () => {
         description: "增值服务使用费-用卡安全保障",
         amount: -5,
         direction: "expense",
-        category: "其他",
+        category: "其他支出",
         source: "file",
       },
       {
@@ -319,7 +344,7 @@ test("parses China Merchants Bank credit card statement rows", () => {
         description: "财付通-虎头军煎饼（鼎成中心店）",
         amount: 14,
         direction: "income",
-        category: "收入",
+        category: "其他收入",
         source: "file",
       },
       {
@@ -327,7 +352,7 @@ test("parses China Merchants Bank credit card statement rows", () => {
         description: "朝朝宝",
         amount: -31.74,
         direction: "expense",
-        category: "其他",
+        category: "其他支出",
         source: "file",
       },
       {

@@ -1,4 +1,10 @@
-import { inferCategory, parseLedgerText, roundMoney } from "./ledger-core.mjs";
+import {
+  inferCategory,
+  normalizeTransactionCategory,
+  normalizeTransactionType,
+  parseLedgerText,
+  roundMoney,
+} from "./ledger-core.mjs";
 
 const PDF_TYPE = "application/pdf";
 const TEXT_LIKE_EXTENSIONS = [".txt", ".csv", ".tsv", ".ofx", ".qfx"];
@@ -391,8 +397,13 @@ function normalizeAiTransaction(transaction) {
     return null;
   }
 
-  const direction =
-    transaction.direction === "income" || transaction.type === "income" || amount > 0
+  const transactionType = normalizeTransactionType(transaction.type);
+  const isTransfer = transactionType === "transfer";
+  const direction = isTransfer
+    ? amount >= 0
+      ? "income"
+      : "expense"
+    : transaction.direction === "income" || transaction.type === "income" || amount > 0
       ? "income"
       : "expense";
   const signedAmount = direction === "income" ? Math.abs(amount) : -Math.abs(amount);
@@ -402,7 +413,12 @@ function normalizeAiTransaction(transaction) {
     description,
     amount: roundMoney(signedAmount),
     direction,
-    category: String(transaction.category || inferCategory(description, direction)).trim(),
+    ...(isTransfer ? { type: "transfer", transferMatch: "explicit" } : {}),
+    category: normalizeTransactionCategory(
+      transaction.category,
+      isTransfer ? "transfer" : direction,
+      description,
+    ),
     source: "ai",
   };
 }

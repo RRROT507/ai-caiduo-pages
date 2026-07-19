@@ -313,6 +313,203 @@ CMB Credit Card Statement (2026.03)
   }
 });
 
+test("scopes category options by type and adds quick transfer entries", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer();
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: edgePath,
+  });
+
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") {
+        errors.push(message.text());
+      }
+    });
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem(
+        "ai-caiduo-accounts-v1",
+        JSON.stringify([
+          { id: "checking", name: "储蓄卡", openingBalance: 1000 },
+          { id: "credit", name: "信用卡", openingBalance: 0 },
+        ]),
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+
+    assert.deepEqual(await page.locator("#directionInput option").allTextContents(), [
+      "支出",
+      "收入",
+      "转账",
+    ]);
+
+    let categoryOptions = await page.locator("#categoryInput option").allTextContents();
+    assert.ok(categoryOptions.includes("餐饮"));
+    assert.ok(categoryOptions.includes("其他支出"));
+    assert.equal(categoryOptions.includes("收入"), false);
+    assert.equal(categoryOptions.includes("工资"), false);
+
+    await page.selectOption("#directionInput", "income");
+    categoryOptions = await page.locator("#categoryInput option").allTextContents();
+    assert.ok(categoryOptions.includes("工资"));
+    assert.ok(categoryOptions.includes("其他收入"));
+    assert.equal(categoryOptions.includes("餐饮"), false);
+    assert.equal(categoryOptions.includes("交通"), false);
+
+    await page.selectOption("#directionInput", "transfer");
+    assert.deepEqual(await page.locator("#categoryInput option").allTextContents(), ["转账"]);
+    assert.equal(await page.locator("#categoryInput").isDisabled(), true);
+    assert.equal(await page.locator("#transferToAccountInput").isVisible(), true);
+
+    await page.selectOption("#accountInput", "checking");
+    await page.selectOption("#transferToAccountInput", "credit");
+    await page.fill("#dateInput", "2026-07-08");
+    await page.fill("#amountInput", "500");
+    await page.fill("#descriptionInput", "还信用卡");
+    await page.click("#entryForm button[type=submit]");
+
+    assert.equal(await page.locator("#transactionRows tr").count(), 2);
+    assert.equal(await page.locator(".type-tag.transfer-tag").count(), 2);
+    const rows = await page.locator("#transactionRows tr").allTextContents();
+    assert.match(rows.join("\n"), /储蓄卡[\s\S]*转账[\s\S]*-¥500\.00/u);
+    assert.match(rows.join("\n"), /信用卡[\s\S]*转账[\s\S]*\+¥500\.00/u);
+
+    await page.setInputFiles("#fileInput", {
+      name: "typed-categories.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("2026-07-02 星巴克咖啡 -32.50\n2026-07-03 工资入账 12000.00 收入"),
+    });
+    await page.click("#importButton");
+    await page.waitForSelector("#pendingRows tr");
+
+    const expenseImportOptions = await page
+      .locator("#pendingRows select")
+      .nth(0)
+      .locator("option")
+      .allTextContents();
+    const incomeImportOptions = await page
+      .locator("#pendingRows select")
+      .nth(1)
+      .locator("option")
+      .allTextContents();
+
+    assert.ok(expenseImportOptions.includes("餐饮"));
+    assert.equal(expenseImportOptions.includes("工资"), false);
+    assert.ok(incomeImportOptions.includes("工资"));
+    assert.equal(incomeImportOptions.includes("餐饮"), false);
+    assert.equal(errors.join(" | "), "");
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
+test("keeps AI-imported single transfer rows after confirm and reload", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer({
+    aiImportPayload: {
+      transactions: [
+        {
+          date: "2026-07-07",
+          description: "账户互转",
+          amount: "-200",
+          type: "transfer",
+          category: "收入",
+        },
+      ],
+    },
+  });
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: edgePath,
+  });
+
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    await page.addInitScript(() => {
+      const RealDate = Date;
+      const frozenTime = new RealDate(2026, 6, 19, 12, 0, 0).valueOf();
+      class FrozenDate extends RealDate {
+        constructor(...args) {
+          super(...(args.length ? args : [frozenTime]));
+        }
+
+        static now() {
+          return frozenTime;
+        }
+      }
+      globalThis.Date = FrozenDate;
+    });
+
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.evaluate((endpoint) => {
+      globalThis.AI_CAIDUO_IMPORT_ENDPOINT = endpoint;
+    }, `${server.url}ai-import`);
+
+    await page.setInputFiles("#fileInput", {
+      name: "ai-transfer.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("ignored"),
+    });
+    await page.click("#importButton");
+    await page.waitForSelector("#pendingRows tr");
+    assert.equal(await page.locator("#pendingRows tr").count(), 1);
+    assert.equal(await page.locator("#pendingRows select").isDisabled(), true);
+    assert.match(await page.locator("#pendingRows tr").first().textContent(), /转账/u);
+
+    await page.click("#confirmImportButton");
+    await page.waitForFunction(() =>
+      (document.querySelector("#importStatus")?.textContent || "").includes("已入账"),
+    );
+    await page.reload({ waitUntil: "domcontentloaded" });
+
+    assert.equal(await page.locator(".type-tag.transfer-tag").count(), 1);
+    const savedTransactions = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ai-caiduo-transactions-v1") || "[]").map(
+        ({ type, transferMatch, category }) => ({ type, transferMatch, category }),
+      ),
+    );
+    assert.deepEqual(savedTransactions, [
+      { type: "transfer", transferMatch: "explicit", category: "转账" },
+    ]);
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
 test("selects multiple transaction rows and displays generic transfer tags", async (t) => {
   if (!existsSync(edgePath)) {
     t.skip("Microsoft Edge is not available in this environment");
@@ -556,10 +753,16 @@ test("keeps date range calendar columns aligned on narrow screens", async (t) =>
   }
 });
 
-function startStaticServer() {
+function startStaticServer(options = {}) {
   const server = createServer(async (request, response) => {
     try {
       const pathname = new URL(request.url, "http://localhost").pathname;
+      if (request.method === "POST" && pathname === "/ai-import") {
+        response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify(options.aiImportPayload || { transactions: [] }));
+        return;
+      }
+
       const relativePath = pathname === "/" ? "index.html" : pathname.slice(1);
       const filePath = join(rootDir, relativePath);
       const body = await readFile(filePath);

@@ -6,13 +6,120 @@ import {
   calculateRunningBalances,
   compareLedgerTransactionsDescending,
   filterLedgerTransactions,
+  getCategoriesForType,
+  getTransactionTypes,
   inferCategory,
+  normalizeTransactionCategory,
   parseLedgerText,
   summarizeMonth,
   summarizeSelection,
   tagTransferTransactions,
   toCsv,
 } from "../assets/ledger-core.mjs";
+
+test("provides scenario-specific category options for each transaction type", () => {
+  assert.deepEqual(getCategoriesForType("expense"), [
+    "餐饮",
+    "交通",
+    "购物",
+    "居家",
+    "医疗",
+    "娱乐",
+    "学习",
+    "其他支出",
+  ]);
+  assert.deepEqual(getCategoriesForType("income"), [
+    "工资",
+    "奖金",
+    "报销",
+    "退款",
+    "利息",
+    "投资收益",
+    "其他收入",
+  ]);
+  assert.deepEqual(getCategoriesForType("transfer"), ["转账"]);
+});
+
+test("provides ordered transaction type options", () => {
+  assert.deepEqual(getTransactionTypes(), [
+    { value: "expense", label: "支出" },
+    { value: "income", label: "收入" },
+    { value: "transfer", label: "转账" },
+  ]);
+});
+
+test("normalizes categories so they match the transaction type", () => {
+  assert.equal(normalizeTransactionCategory("收入", "expense", "未知商户"), "其他支出");
+  assert.equal(normalizeTransactionCategory("餐饮", "income", "工资入账"), "工资");
+  assert.equal(normalizeTransactionCategory("其他", "income", "未知收入"), "其他收入");
+  assert.equal(normalizeTransactionCategory("收入", "transfer", "账户互转"), "转账");
+});
+
+test("preserves explicit transfer rows while removing stale auto transfer tags", () => {
+  const transactions = tagTransferTransactions([
+    {
+      id: "ai-transfer",
+      date: "2026-07-07",
+      description: "账户互转",
+      amount: -200,
+      direction: "expense",
+      type: "transfer",
+      transferMatch: "explicit",
+      category: "收入",
+      accountId: "checking",
+    },
+    {
+      id: "stale-auto-transfer",
+      date: "2026-07-08",
+      description: "旧自动转账",
+      amount: -50,
+      direction: "expense",
+      type: "transfer",
+      transferMatch: "auto",
+      category: "转账",
+      accountId: "checking",
+    },
+    {
+      id: "legacy-stale-transfer",
+      date: "2026-07-09",
+      description: "旧转账标签",
+      amount: -30,
+      direction: "expense",
+      type: "transfer",
+      category: "转账",
+      accountId: "checking",
+    },
+  ]);
+
+  assert.deepEqual(
+    transactions.map(({ id, type, transferMatch, category }) => ({
+      id,
+      type,
+      transferMatch,
+      category,
+    })),
+    [
+      {
+        id: "ai-transfer",
+        type: "transfer",
+        transferMatch: "explicit",
+        category: "转账",
+      },
+      {
+        id: "stale-auto-transfer",
+        type: undefined,
+        transferMatch: undefined,
+        category: "其他支出",
+      },
+      {
+        id: "legacy-stale-transfer",
+        type: undefined,
+        transferMatch: undefined,
+        category: "其他支出",
+      },
+    ],
+  );
+});
 
 test("parses pasted statement text into normalized transactions", () => {
   const transactions = parseLedgerText(
@@ -40,7 +147,7 @@ test("parses pasted statement text into normalized transactions", () => {
       description: "工资入账",
       amount: 12000,
       direction: "income",
-      category: "收入",
+      category: "工资",
       source: "paste",
     },
     {
@@ -150,12 +257,14 @@ test("exports transfer transactions with transfer type label", () => {
 
   assert.equal(
     csv,
-    "日期,账户,类型,分类,说明,金额,来源\n2026-03-06,未指定账户,转账,其他,账户互转,-100.00,file",
+    "日期,账户,类型,分类,说明,金额,来源\n2026-03-06,未指定账户,转账,转账,账户互转,-100.00,file",
   );
 });
 
 test("infers a conservative fallback category", () => {
-  assert.equal(inferCategory("未知商户"), "其他");
+  assert.equal(inferCategory("未知商户"), "其他支出");
+  assert.equal(inferCategory("工资入账", "income"), "工资");
+  assert.equal(inferCategory("账户互转", "transfer"), "转账");
 });
 
 test("summarizes selected months across selected accounts", () => {
@@ -469,6 +578,6 @@ test("exports csv with account names", () => {
 
   assert.equal(
     csv,
-    "日期,账户,类型,分类,说明,金额,来源\n2026-07-02,招商信用卡,支出,餐饮,\"午餐,咖啡\",-45.60,manual\n2026-07-03,未指定账户,支出,其他,旧数据,-8.00,manual",
+    "日期,账户,类型,分类,说明,金额,来源\n2026-07-02,招商信用卡,支出,餐饮,\"午餐,咖啡\",-45.60,manual\n2026-07-03,未指定账户,支出,其他支出,旧数据,-8.00,manual",
   );
 });

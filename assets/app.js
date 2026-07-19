@@ -5,7 +5,14 @@ import {
   calculateRunningBalances,
   compareLedgerTransactionsDescending,
   filterLedgerTransactions,
+  getCategoriesForType,
+  getTransactionType,
+  getTransactionTypes,
+  getTypeLabel,
   inferCategory,
+  normalizeLedgerTransaction,
+  normalizeTransactionCategory,
+  normalizeTransactionType,
   roundMoney,
   summarizeSelection,
   tagTransferTransactions,
@@ -20,7 +27,6 @@ const DEFAULT_ACCOUNTS = [
   { id: "alipay", name: "支付宝", openingBalance: 0 },
   { id: "cash", name: "现金", openingBalance: 0 },
 ];
-const CATEGORIES = ["餐饮", "交通", "购物", "居家", "医疗", "娱乐", "学习", "收入", "其他"];
 
 const state = {
   transactions: loadTransactions(),
@@ -60,7 +66,10 @@ const elements = {
   dateInput: document.querySelector("#dateInput"),
   directionInput: document.querySelector("#directionInput"),
   amountInput: document.querySelector("#amountInput"),
+  accountInputLabel: document.querySelector("#accountInputLabel"),
   accountInput: document.querySelector("#accountInput"),
+  transferToAccountField: document.querySelector("#transferToAccountField"),
+  transferToAccountInput: document.querySelector("#transferToAccountInput"),
   categoryInput: document.querySelector("#categoryInput"),
   descriptionInput: document.querySelector("#descriptionInput"),
   fileInput: document.querySelector("#fileInput"),
@@ -96,6 +105,7 @@ init();
 
 function init() {
   elements.dateInput.value = getToday();
+  renderTransactionTypeOptions();
   renderCategoryOptions();
   renderAccountOptions();
   bindEvents();
@@ -146,17 +156,19 @@ function bindEvents() {
   });
 
   elements.directionInput.addEventListener("change", () => {
-    const direction = elements.directionInput.value;
-    if (direction === "income") {
-      elements.categoryInput.value = "收入";
-      return;
-    }
-    elements.categoryInput.value = inferCategory(elements.descriptionInput.value);
+    updateEntryTypeControls({ inferFromDescription: true });
   });
 
   elements.descriptionInput.addEventListener("input", () => {
-    if (elements.directionInput.value === "expense") {
-      elements.categoryInput.value = inferCategory(elements.descriptionInput.value);
+    const type = normalizeTransactionType(elements.directionInput.value);
+    if (type !== "transfer") {
+      elements.categoryInput.value = inferCategory(elements.descriptionInput.value, type);
+    }
+  });
+
+  elements.accountInput.addEventListener("change", () => {
+    if (normalizeTransactionType(elements.directionInput.value) === "transfer") {
+      renderTransferToAccountSelect(elements.transferToAccountInput.value);
     }
   });
 
@@ -270,19 +282,24 @@ function bindEvents() {
 
 function addManualTransaction() {
   const amount = Number(elements.amountInput.value);
-  const direction = elements.directionInput.value;
+  const type = normalizeTransactionType(elements.directionInput.value);
   const description = elements.descriptionInput.value.trim();
-  const category = elements.categoryInput.value || inferCategory(description, direction);
+  const category = normalizeTransactionCategory(elements.categoryInput.value, type, description);
 
   if (!amount || amount <= 0 || !description) {
+    return;
+  }
+
+  if (type === "transfer") {
+    addManualTransfer(amount, description);
     return;
   }
 
   const transaction = withId({
     date: elements.dateInput.value,
     description,
-    amount: direction === "expense" ? -amount : amount,
-    direction,
+    amount: type === "expense" ? -amount : amount,
+    direction: type,
     category,
     accountId: normalizeAccountId(elements.accountInput.value),
     source: "manual",
@@ -294,7 +311,53 @@ function addManualTransaction() {
   elements.dateInput.value = getToday();
   elements.directionInput.value = "expense";
   elements.accountInput.value = getDefaultAccountId();
-  elements.categoryInput.value = inferCategory("");
+  updateEntryTypeControls({ inferFromDescription: false });
+  render();
+}
+
+function addManualTransfer(amount, description) {
+  const fromAccountId = normalizeAccountId(elements.accountInput.value);
+  const toAccountId = normalizeAccountId(elements.transferToAccountInput.value);
+  if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) {
+    return;
+  }
+
+  const baseSequence = getMaxTransactionSequence();
+  const common = {
+    date: elements.dateInput.value,
+    description,
+    type: "transfer",
+    category: "转账",
+    source: "manual",
+  };
+  const transactions = [
+    withId(
+      {
+        ...common,
+        amount: -Math.abs(amount),
+        direction: "expense",
+        accountId: fromAccountId,
+      },
+      baseSequence + 1,
+    ),
+    withId(
+      {
+        ...common,
+        amount: Math.abs(amount),
+        direction: "income",
+        accountId: toAccountId,
+      },
+      baseSequence + 2,
+    ),
+  ];
+
+  state.transactions = [...transactions, ...state.transactions];
+  persist();
+  elements.entryForm.reset();
+  elements.dateInput.value = getToday();
+  elements.directionInput.value = "expense";
+  elements.accountInput.value = getDefaultAccountId();
+  updateEntryTypeControls({ inferFromDescription: false });
   render();
 }
 
@@ -322,7 +385,7 @@ async function importSelectedFile() {
     }
 
     state.pendingTransactions = result.transactions.map((transaction) => ({
-      ...transaction,
+      ...normalizeLedgerTransaction(transaction),
       previewId: createId(),
     }));
     const accountResolution = resolveImportAccountCandidate(result.accountCandidate);
@@ -399,7 +462,16 @@ function deletePendingTransaction(previewId) {
 
 function updatePendingCategory(previewId, category) {
   state.pendingTransactions = state.pendingTransactions.map((transaction) =>
-    transaction.previewId === previewId ? { ...transaction, category } : transaction,
+    transaction.previewId === previewId
+      ? {
+          ...transaction,
+          category: normalizeTransactionCategory(
+            category,
+            getTransactionType(transaction),
+            transaction.description,
+          ),
+        }
+      : transaction,
   );
 }
 
@@ -671,7 +743,13 @@ function renderCategoryFilter() {
         startDate: state.startDate,
         endDate: state.endDate,
         accountIds: getSelectedAccountIds(),
-      }).map((transaction) => transaction.category),
+      }).map((transaction) =>
+        normalizeTransactionCategory(
+          transaction.category,
+          getTransactionType(transaction),
+          transaction.description,
+        ),
+      ),
     ),
   ];
 
@@ -744,22 +822,44 @@ function renderDetectedAccountPanel() {
   elements.addDetectedAccountControl.classList.remove("is-hidden");
 }
 
-function renderCategoryOptions() {
+function renderCategoryOptions(type = elements.directionInput.value, preferredCategory = "") {
+  const normalizedType = normalizeTransactionType(type);
+  const categories = getCategoriesForType(normalizedType);
+  const nextCategory =
+    preferredCategory || normalizeTransactionCategory("", normalizedType, elements.descriptionInput.value);
   replaceChildrenCompat(
     elements.categoryInput,
-    ...CATEGORIES.map((category) => {
+    ...categories.map((category) => {
       const option = document.createElement("option");
       option.value = category;
       option.textContent = category;
       return option;
     }),
   );
-  elements.categoryInput.value = "其他";
+  elements.categoryInput.value = categories.includes(nextCategory) ? nextCategory : categories[0];
+  elements.categoryInput.disabled = normalizedType === "transfer";
+}
+
+function renderTransactionTypeOptions(selectedValue = elements.directionInput.value) {
+  const selectedType = normalizeTransactionType(selectedValue);
+  const transactionTypes = getTransactionTypes();
+  replaceChildrenCompat(
+    elements.directionInput,
+    ...transactionTypes.map((transactionType) =>
+      createOption(transactionType.value, transactionType.label),
+    ),
+  );
+  elements.directionInput.value = transactionTypes.some(
+    (transactionType) => transactionType.value === selectedType,
+  )
+    ? selectedType
+    : "expense";
 }
 
 function renderAccountOptions() {
   renderAccountSelect(elements.accountInput, elements.accountInput.value);
   renderAccountSelect(elements.importAccountInput, elements.importAccountInput.value);
+  renderTransferToAccountSelect(elements.transferToAccountInput.value);
 }
 
 function renderAccountSelect(select, selectedValue) {
@@ -772,6 +872,32 @@ function renderAccountSelect(select, selectedValue) {
 
   replaceChildrenCompat(select, ...accountOptions);
   select.value = values.has(selectedValue) ? selectedValue : defaultValue;
+}
+
+function renderTransferToAccountSelect(selectedValue) {
+  const fromAccountId = elements.accountInput.value;
+  const defaultValue =
+    state.accounts.find((account) => account.id !== fromAccountId)?.id ||
+    state.accounts[0]?.id ||
+    "";
+  const accountOptions = state.accounts.map((account) => createOption(account.id, account.name));
+  const values = new Set(accountOptions.map((option) => option.value));
+
+  replaceChildrenCompat(elements.transferToAccountInput, ...accountOptions);
+  elements.transferToAccountInput.value =
+    values.has(selectedValue) && selectedValue !== fromAccountId ? selectedValue : defaultValue;
+}
+
+function updateEntryTypeControls(options = {}) {
+  const type = normalizeTransactionType(elements.directionInput.value);
+  const inferredCategory = options.inferFromDescription
+    ? inferCategory(elements.descriptionInput.value, type)
+    : "";
+
+  renderCategoryOptions(type, inferredCategory);
+  elements.accountInputLabel.textContent = type === "transfer" ? "转出账户" : "账户";
+  elements.transferToAccountField.classList.toggle("is-hidden", type !== "transfer");
+  renderTransferToAccountSelect(elements.transferToAccountInput.value);
 }
 
 function renderAccountList() {
@@ -950,10 +1076,12 @@ function createCategoryBar(item, maxAmount) {
 
 function createTransactionRow(transaction, accountBalance = 0) {
   const row = document.createElement("tr");
-  const isIncome = transaction.direction === "income";
-  const isTransfer = transaction.type === "transfer";
+  const type = getTransactionType(transaction);
+  const category = normalizeTransactionCategory(transaction.category, type, transaction.description);
+  const isIncome = type === "income";
+  const isTransfer = type === "transfer";
   const amountClass = isTransfer ? "transfer-text" : isIncome ? "income-text" : "expense-text";
-  const typeLabel = isTransfer ? "转账" : isIncome ? "收入" : "支出";
+  const typeLabel = getTypeLabel(type);
   row.innerHTML = `
     <td data-label="选择" class="select-cell">
       <input
@@ -966,9 +1094,7 @@ function createTransactionRow(transaction, accountBalance = 0) {
     <td data-label="日期">${escapeHtml(transaction.date)}</td>
     <td data-label="账户">${escapeHtml(getAccountName(transaction.accountId))}</td>
     <td data-label="说明">${escapeHtml(transaction.description)}</td>
-    <td data-label="分类"><span class="tag ${isTransfer ? "transfer-tag" : ""}">${escapeHtml(
-      transaction.category,
-    )}</span></td>
+    <td data-label="分类"><span class="tag ${isTransfer ? "transfer-tag" : ""}">${escapeHtml(category)}</span></td>
     <td data-label="类型">${
       isTransfer
         ? `<span class="type-tag transfer-tag">${escapeHtml(typeLabel)}</span>`
@@ -989,23 +1115,29 @@ function createTransactionRow(transaction, accountBalance = 0) {
 
 function createPendingRow(transaction) {
   const row = document.createElement("tr");
-  const isIncome = transaction.direction === "income";
+  const type = getTransactionType(transaction);
+  const category = normalizeTransactionCategory(transaction.category, type, transaction.description);
+  const isIncome = type === "income";
+  const isTransfer = type === "transfer";
+  const categories = getCategoriesForType(type);
   row.innerHTML = `
     <td data-label="日期">${escapeHtml(transaction.date)}</td>
     <td data-label="说明">${escapeHtml(transaction.description)}</td>
     <td data-label="分类">
       <select class="compact-select" data-pending-category-id="${escapeHtml(
         transaction.previewId,
-      )}" aria-label="调整分类">
-        ${CATEGORIES.map(
-          (category) =>
-            `<option value="${escapeHtml(category)}" ${
-              category === transaction.category ? "selected" : ""
-            }>${escapeHtml(category)}</option>`,
+      )}" aria-label="调整分类" ${isTransfer ? "disabled" : ""}>
+        ${categories.map(
+          (optionCategory) =>
+            `<option value="${escapeHtml(optionCategory)}" ${
+              optionCategory === category ? "selected" : ""
+            }>${escapeHtml(optionCategory)}</option>`,
         ).join("")}
       </select>
     </td>
-    <td data-label="金额" class="amount-cell ${isIncome ? "income-text" : "expense-text"}">${escapeHtml(
+    <td data-label="金额" class="amount-cell ${
+      isTransfer ? "transfer-text" : isIncome ? "income-text" : "expense-text"
+    }">${escapeHtml(
       formatSignedMoney(transaction.amount),
     )}</td>
     <td data-label="操作" class="action-cell">
@@ -1025,7 +1157,12 @@ function getVisibleTransactions() {
   })
     .filter(
       (transaction) =>
-        state.categoryFilter === "all" || transaction.category === state.categoryFilter,
+        state.categoryFilter === "all" ||
+          normalizeTransactionCategory(
+            transaction.category,
+            getTransactionType(transaction),
+            transaction.description,
+          ) === state.categoryFilter,
     )
     .sort(compareLedgerTransactionsDescending);
 }
