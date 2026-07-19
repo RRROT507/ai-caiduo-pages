@@ -26,6 +26,7 @@ const state = {
   accounts: loadAccounts(),
   pendingTransactions: [],
   pendingAccountCandidate: null,
+  pendingAccountNotice: "",
   pendingAccountMode: "manual",
   pendingMatchedAccountId: "",
   selectedFile: null,
@@ -307,6 +308,9 @@ async function importSelectedFile() {
     }));
     const accountResolution = resolveImportAccountCandidate(result.accountCandidate);
     state.pendingAccountCandidate = accountResolution.candidate;
+    state.pendingAccountNotice = accountResolution.candidate
+      ? ""
+      : "未识别到账户，请手动选择入账账户";
     state.pendingAccountMode = accountResolution.mode;
     state.pendingMatchedAccountId = accountResolution.accountId;
 
@@ -647,8 +651,16 @@ function renderPendingImport() {
 function renderDetectedAccountPanel() {
   const candidate = state.pendingAccountCandidate;
   const hasCandidate = Boolean(candidate && state.pendingTransactions.length > 0);
-  elements.detectedAccountPanel.classList.toggle("is-hidden", !hasCandidate);
-  if (!hasCandidate) {
+  const hasNotice = Boolean(state.pendingAccountNotice && state.pendingTransactions.length > 0);
+  elements.detectedAccountPanel.classList.toggle("is-hidden", !hasCandidate && !hasNotice);
+  if (!hasCandidate && !hasNotice) {
+    return;
+  }
+
+  if (hasNotice && !hasCandidate) {
+    elements.detectedAccountTitle.textContent = "未识别到账户";
+    elements.detectedAccountDetail.textContent = state.pendingAccountNotice;
+    elements.addDetectedAccountControl.classList.add("is-hidden");
     return;
   }
 
@@ -1137,6 +1149,7 @@ function clearSelectedFile() {
 
 function clearPendingAccountCandidate() {
   state.pendingAccountCandidate = null;
+  state.pendingAccountNotice = "";
   state.pendingAccountMode = "manual";
   state.pendingMatchedAccountId = "";
 }

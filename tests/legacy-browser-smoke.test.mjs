@@ -166,6 +166,9 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
     assert.equal(errors.join(" | "), "");
     assert.ok((await page.locator("#categoryInput option").count()) > 0);
     assert.equal(await page.locator("#pendingRows tr").count(), 4);
+    assert.ok(await page.locator("#detectedAccountPanel").isVisible());
+    assert.match(await page.locator("#detectedAccountPanel").textContent(), /未识别到账户/u);
+    assert.match(await page.locator("#detectedAccountPanel").textContent(), /手动选择入账账户/u);
     assert.equal(await page.locator("#transactionRows tr").count(), 3);
     await page.click("#confirmImportButton");
     await page.waitForTimeout(300);
@@ -318,6 +321,62 @@ test("initializes the date range from the local calendar date", async (t) => {
     assert.equal(await page.locator("#dateRangeLabel").textContent(), "2026-09-01");
     await page.click("#dateRangeButton");
     assert.equal(await page.locator("#calendarMonthLabel").textContent(), "2026年9月");
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
+test("keeps date range calendar columns aligned on narrow screens", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer();
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: edgePath,
+  });
+
+  try {
+    const page = await browser.newPage({ viewport: { width: 320, height: 800 } });
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.click("#dateRangeButton");
+
+    const metrics = await page.evaluate(() => {
+      const rectOf = (element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, width: rect.width };
+      };
+      const panel = document.querySelector("#dateRangePanel");
+      const weekdayWidths = [...document.querySelectorAll(".calendar-weekdays span")].map(
+        (element) => rectOf(element).width,
+      );
+      const dayRects = [...document.querySelectorAll(".calendar-day:not(:disabled)")].map(rectOf);
+      return {
+        panel: rectOf(panel),
+        scrollWidth: panel.scrollWidth,
+        clientWidth: panel.clientWidth,
+        weekdayWidths,
+        dayWidths: dayRects.slice(0, 7).map((rect) => rect.width),
+        maxDayRight: Math.max(...dayRects.map((rect) => rect.right)),
+      };
+    });
+
+    assert.ok(metrics.scrollWidth <= metrics.clientWidth + 1);
+    for (const dayWidth of metrics.dayWidths) {
+      assert.ok(Math.abs(dayWidth - metrics.weekdayWidths[0]) <= 1);
+    }
+    assert.ok(metrics.maxDayRight <= metrics.panel.right + 1);
   } finally {
     await browser.close();
     await server.close();

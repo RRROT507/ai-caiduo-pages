@@ -58,19 +58,27 @@ export async function analyzeLedgerFile(file, options = {}) {
   };
 }
 
-export function parseCmbCreditCardStatementText(text, options = {}) {
+export function parseCmbCreditCardStatement(text, options = {}) {
   const statement = getStatementYearMonth(text, options.fallbackYear);
-  const transactions = [];
+  const rows = [];
 
   for (const rawLine of String(text).split(/\r?\n/u)) {
     const line = rawLine.replace(/\s+/gu, " ").trim();
     const parsed = parseCmbTransactionLine(line, statement);
     if (parsed) {
-      transactions.push(parsed);
+      rows.push(parsed);
     }
   }
 
-  return transactions;
+  const transactions = rows.map(({ cardNumberLast4, ...transaction }) => transaction);
+  return {
+    transactions,
+    accountCandidate: buildCmbCreditCardAccountCandidate(rows),
+  };
+}
+
+export function parseCmbCreditCardStatementText(text, options = {}) {
+  return parseCmbCreditCardStatement(text, options).transactions;
 }
 
 export function parseCmbTransactionStatement(text) {
@@ -105,10 +113,7 @@ function parseLocalStatementText(text, options) {
   }
 
   if (CMB_CREDIT_CARD_PATTERN.test(text)) {
-    return {
-      transactions: parseCmbCreditCardStatementText(text, options),
-      accountCandidate: null,
-    };
+    return parseCmbCreditCardStatement(text, options);
   }
 
   return {
@@ -274,6 +279,28 @@ function buildCmbAccountCandidate(text, rows) {
   };
 }
 
+function buildCmbCreditCardAccountCandidate(rows) {
+  const cardNumbers = [
+    ...new Set(
+      rows
+        .map((row) => String(row.cardNumberLast4 || "").trim())
+        .filter((value) => /^\d{4}$/u.test(value)),
+    ),
+  ].sort();
+  if (cardNumbers.length === 0) {
+    return null;
+  }
+
+  const accountNumberLast4 = cardNumbers.join("/");
+  return {
+    institution: CMB_INSTITUTION,
+    accountName: `${CMB_INSTITUTION}信用卡 尾号${accountNumberLast4}`,
+    accountNumberLast4,
+    accountFingerprint: `cmb-credit-card:${cardNumbers.join("-")}`,
+    openingBalanceEstimate: 0,
+  };
+}
+
 function findCmbStatementAccountNumber(text) {
   const beforeTransactions =
     String(text).split(/\n(?=\d{4}-\d{2}-\d{2}\s+[A-Z]{3}\s+)/u)[0] || "";
@@ -285,7 +312,7 @@ function findCmbStatementAccountNumber(text) {
 
 function parseCmbTransactionLine(line, statement) {
   const match = line.match(
-    /^(\d{2})\/(\d{2})(?:\s+\d{2}\/\d{2})?\s+(.+?)\s+([-+]?\d[\d,]*\.\d{2})\s+\d{4}\s+[-+]?\d[\d,]*\.\d{2}(?:\s|$)/u,
+    /^(\d{2})\/(\d{2})(?:\s+\d{2}\/\d{2})?\s+(.+?)\s+([-+]?\d[\d,]*\.\d{2})\s+(\d{4})\s+[-+]?\d[\d,]*\.\d{2}(?:\s|$)/u,
   );
   if (!match) {
     return null;
@@ -311,6 +338,7 @@ function parseCmbTransactionLine(line, statement) {
     direction,
     category: inferCategory(description, direction),
     source: "file",
+    cardNumberLast4: match[5],
   };
 }
 

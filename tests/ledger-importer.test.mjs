@@ -325,6 +325,34 @@ test("parses China Merchants Bank credit card statement rows", () => {
   );
 });
 
+test("extracts account candidate from China Merchants Bank credit card statement", async () => {
+  const file = new File(
+    [
+      `招商银行信用卡对账单（个人消费卡账户 2026年03月）
+CMB Credit Card Statement (2026.03)
+本期账务明细 Transaction Details
+人民币账户 RMB A/C
+交易日 记账日 交易摘要 人民币金额 卡号末四位 交易地金额
+SOLD POSTED DESCRIPTION RMB AMOUNT CARD NO(Last 4digits) Original Tran Amount
+03/01 03/01 增值服务使用费-用卡安全保障 5.00 1755 5.00
+03/10 03/11 支付宝-高德打车 10.30 1755 10.30`,
+    ],
+    "CreditCardReckoning2026-03.txt",
+    { type: "text/plain" },
+  );
+
+  const result = await analyzeLedgerFile(file, { fallbackYear: 2026 });
+
+  assert.equal(result.mode, "local");
+  assert.deepEqual(result.accountCandidate, {
+    institution: "招商银行",
+    accountName: "招商银行信用卡 尾号1755",
+    accountNumberLast4: "1755",
+    accountFingerprint: "cmb-credit-card:1755",
+    openingBalanceEstimate: 0,
+  });
+});
+
 function startJsonEndpoint(responseBody) {
   const requests = [];
   const server = createServer((request, response) => {
