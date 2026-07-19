@@ -2,9 +2,10 @@ import { inferCategory, parseLedgerText, roundMoney } from "./ledger-core.mjs";
 
 const PDF_TYPE = "application/pdf";
 const TEXT_LIKE_EXTENSIONS = [".txt", ".csv", ".tsv", ".ofx", ".qfx"];
+const CMB_TRANSACTION_STATEMENT_PATTERN =
+  /招商银行交易流水|Transaction Statement of China Merchants Bank/u;
 const CMB_CREDIT_CARD_PATTERN = /招商银行信用卡对账单|CMB Credit Card Statement/u;
 const CMB_SKIP_PATTERN = /还款|还款反馈金/u;
-const CMB_INCOME_DESCRIPTION_PATTERN = /朝朝宝|退款|退货|返现|冲正|退费|利息|收益|转入|入账/u;
 
 export async function analyzeLedgerFile(file, options = {}) {
   if (!file) {
@@ -68,9 +69,27 @@ export function parseCmbCreditCardStatementText(text, options = {}) {
   return transactions;
 }
 
+export function parseCmbTransactionStatementText(text) {
+  const transactions = [];
+
+  for (const rawLine of String(text).split(/\r?\n/u)) {
+    const line = rawLine.replace(/\s+/gu, " ").trim();
+    const parsed = parseCmbTransactionStatementLine(line);
+    if (parsed) {
+      transactions.push(parsed);
+    }
+  }
+
+  return transactions;
+}
+
 function parseLocalStatementText(text, options) {
   if (!text.trim()) {
     return [];
+  }
+
+  if (CMB_TRANSACTION_STATEMENT_PATTERN.test(text)) {
+    return parseCmbTransactionStatementText(text);
   }
 
   if (CMB_CREDIT_CARD_PATTERN.test(text)) {
@@ -185,6 +204,33 @@ function textContentToLines(content) {
     .filter(Boolean);
 }
 
+function parseCmbTransactionStatementLine(line) {
+  const match = line.match(
+    /^(\d{4})-(\d{2})-(\d{2})\s+[A-Z]{3}\s+([-+]?\d[\d,]*\.\d{2})\s+[-+]?\d[\d,]*\.\d{2}(?:\s+(.+))?$/u,
+  );
+  if (!match) {
+    return null;
+  }
+
+  const amount = parseAmount(match[4]);
+  if (!Number.isFinite(amount) || amount === 0) {
+    return null;
+  }
+
+  const direction = amount < 0 ? "expense" : "income";
+  const signedAmount = direction === "expense" ? -Math.abs(amount) : Math.abs(amount);
+  const description = String(match[5] || "招商银行交易").trim();
+
+  return {
+    date: `${match[1]}-${match[2]}-${match[3]}`,
+    description,
+    amount: roundMoney(signedAmount),
+    direction,
+    category: inferCategory(description, direction),
+    source: "file",
+  };
+}
+
 function parseCmbTransactionLine(line, statement) {
   const match = line.match(
     /^(\d{2})\/(\d{2})(?:\s+\d{2}\/\d{2})?\s+(.+?)\s+([-+]?\d[\d,]*\.\d{2})\s+\d{4}\s+[-+]?\d[\d,]*\.\d{2}(?:\s|$)/u,
@@ -203,7 +249,7 @@ function parseCmbTransactionLine(line, statement) {
     return null;
   }
 
-  const direction = getCmbTransactionDirection(description, amount);
+  const direction = getCmbCreditCardTransactionDirection(amount);
   const signedAmount = direction === "expense" ? -Math.abs(amount) : Math.abs(amount);
 
   return {
@@ -216,11 +262,7 @@ function parseCmbTransactionLine(line, statement) {
   };
 }
 
-function getCmbTransactionDirection(description, amount) {
-  if (CMB_INCOME_DESCRIPTION_PATTERN.test(description)) {
-    return "income";
-  }
-
+function getCmbCreditCardTransactionDirection(amount) {
   return amount >= 0 ? "expense" : "income";
 }
 

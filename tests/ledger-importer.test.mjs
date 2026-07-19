@@ -142,6 +142,66 @@ endobj`,
   assert.equal(result.mode, "needs-ai-backend");
 });
 
+test("parses China Merchants Bank transaction statement rows by signed amount", async () => {
+  const file = new File(
+    [
+      `招商银行交易流水
+Transaction Statement of China Merchants Bank
+2026-01-01 -- 2026-06-30
+申请时间：2026-07-18 16:02:56 验证码：3EP63HFA
+交易日期 币种 交易金额 账户余额 交易摘要 交易对方信息
+Transaction
+Date Currency Balance Transaction Type Counter Party
+Amount
+2026-02-23 CNY 31.74 4,000.00 朝朝宝转出
+2026-02-23 CNY -4,000.00 0.00 转账汇款 薛瑾 6214831001555389
+2026-02-23 CNY 4,000.00 4,000.00 汇入汇款 张凯 6214680067553394`,
+    ],
+    "招商银行交易流水.txt",
+    { type: "text/plain" },
+  );
+
+  const result = await analyzeLedgerFile(file, { fallbackYear: 2026 });
+
+  assert.equal(result.mode, "local");
+  assert.deepEqual(
+    result.transactions.map(({ date, description, amount, direction, category, source }) => ({
+      date,
+      description,
+      amount,
+      direction,
+      category,
+      source,
+    })),
+    [
+      {
+        date: "2026-02-23",
+        description: "朝朝宝转出",
+        amount: 31.74,
+        direction: "income",
+        category: "收入",
+        source: "file",
+      },
+      {
+        date: "2026-02-23",
+        description: "转账汇款 薛瑾 6214831001555389",
+        amount: -4000,
+        direction: "expense",
+        category: "其他",
+        source: "file",
+      },
+      {
+        date: "2026-02-23",
+        description: "汇入汇款 张凯 6214680067553394",
+        amount: 4000,
+        direction: "income",
+        category: "收入",
+        source: "file",
+      },
+    ],
+  );
+});
+
 test("parses China Merchants Bank credit card statement rows", () => {
   const transactions = parseCmbCreditCardStatementText(
     `招商银行信用卡对账单（个人消费卡账户 2026年03月）
@@ -182,9 +242,9 @@ test("parses China Merchants Bank credit card statement rows", () => {
       {
         date: "2026-02-23",
         description: "朝朝宝",
-        amount: 31.74,
-        direction: "income",
-        category: "收入",
+        amount: -31.74,
+        direction: "expense",
+        category: "其他",
         source: "file",
       },
       {
