@@ -311,9 +311,6 @@ function confirmPendingImport() {
     importAccountId = createdAccount.id;
   }
 
-  if (state.pendingAccountMode === "matched" && state.pendingMatchedAccountId) {
-    importAccountId = state.pendingMatchedAccountId;
-  }
   const baseSequence = getMaxTransactionSequence();
   const imported = state.pendingTransactions.map(({ previewId, ...transaction }, index) =>
     withId({ ...transaction, accountId: importAccountId }, baseSequence + index + 1),

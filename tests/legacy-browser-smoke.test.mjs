@@ -162,6 +162,31 @@ Transaction Statement of China Merchants Bank
       1,
     );
 
+    await page.setInputFiles("#fileInput", {
+      name: "cmb-matched-account-statement.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(`招商银行交易流水
+Transaction Statement of China Merchants Bank
+卡 账号：6214850121113598
+交易日期 币种 交易金额 账户余额 交易摘要 交易对方信息
+2026-07-06 CNY 42.00 3,958.00 手动改选账户`),
+    });
+    await page.click("#importButton");
+    await page.waitForTimeout(300);
+    assert.match(
+      await page.locator("#detectedAccountPanel").textContent(),
+      /已匹配账户：招商银行 尾号3598/u,
+    );
+    await page.selectOption("#importAccountInput", "alipay");
+    await page.click("#confirmImportButton");
+    await page.waitForTimeout(300);
+
+    await page.selectOption("#accountFilterInput", "alipay");
+    const manuallyReassignedRows = await page.locator("#transactionRows tr").allTextContents();
+    assert.equal(manuallyReassignedRows.length, 1);
+    assert.match(manuallyReassignedRows[0], /手动改选账户/u);
+    await page.selectOption("#accountFilterInput", "all");
+
     await page.selectOption("#importAccountInput", "alipay");
     await page.setInputFiles("#fileInput", {
       name: "alipay-statement.txt",
@@ -176,9 +201,10 @@ Transaction Statement of China Merchants Bank
 
     await page.selectOption("#accountFilterInput", "alipay");
     const alipayRows = await page.locator("#transactionRows tr").allTextContents();
-    assert.equal(alipayRows.length, 1);
-    assert.match(alipayRows[0], /支付宝/u);
-    assert.match(alipayRows[0], /高德打车/u);
+    assert.equal(alipayRows.length, 2);
+    assert.match(alipayRows.join("\n"), /手动改选账户/u);
+    assert.match(alipayRows.join("\n"), /支付宝/u);
+    assert.match(alipayRows.join("\n"), /高德打车/u);
   } finally {
     await browser.close();
     await server.close();
