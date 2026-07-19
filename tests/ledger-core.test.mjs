@@ -10,6 +10,7 @@ import {
   parseLedgerText,
   summarizeMonth,
   summarizeSelection,
+  tagTransferTransactions,
   toCsv,
 } from "../assets/ledger-core.mjs";
 
@@ -134,6 +135,25 @@ test("exports csv with escaped fields", () => {
   );
 });
 
+test("exports transfer transactions with transfer type label", () => {
+  const csv = toCsv([
+    {
+      date: "2026-03-06",
+      description: "账户互转",
+      amount: -100,
+      direction: "expense",
+      type: "transfer",
+      category: "其他",
+      source: "file",
+    },
+  ]);
+
+  assert.equal(
+    csv,
+    "日期,账户,类型,分类,说明,金额,来源\n2026-03-06,未指定账户,转账,其他,账户互转,-100.00,file",
+  );
+});
+
 test("infers a conservative fallback category", () => {
   assert.equal(inferCategory("未知商户"), "其他");
 });
@@ -154,6 +174,102 @@ test("summarizes selected months across selected accounts", () => {
   assert.equal(summary.balance, 11951.8);
   assert.equal(summary.count, 2);
   assert.deepEqual(summary.categoryTotals, [{ category: "交通", amount: 48.2 }]);
+});
+
+test("tags same-day equal opposite account movements as transfers and excludes them from cash flow totals", () => {
+  const transactions = tagTransferTransactions([
+    {
+      id: "savings-payment",
+      date: "2026-03-06",
+      amount: -30435.91,
+      direction: "expense",
+      category: "其他",
+      accountId: "cmb-savings-3598",
+      sequence: 1,
+    },
+    {
+      id: "credit-repayment",
+      date: "2026-03-06",
+      amount: 30435.91,
+      direction: "income",
+      category: "收入",
+      accountId: "cmb-credit-1755",
+      sequence: 2,
+    },
+    {
+      id: "salary",
+      date: "2026-03-06",
+      amount: 1000,
+      direction: "income",
+      category: "收入",
+      accountId: "cmb-savings-3598",
+      sequence: 3,
+    },
+    {
+      id: "coffee",
+      date: "2026-03-06",
+      amount: -20,
+      direction: "expense",
+      category: "餐饮",
+      accountId: "cmb-savings-3598",
+      sequence: 4,
+    },
+  ]);
+
+  assert.equal(transactions.find((transaction) => transaction.id === "savings-payment").type, "transfer");
+  assert.equal(transactions.find((transaction) => transaction.id === "credit-repayment").type, "transfer");
+  assert.equal(transactions.find((transaction) => transaction.id === "salary").type, undefined);
+
+  const summary = summarizeSelection(transactions, {
+    startDate: "2026-03-06",
+    endDate: "2026-03-06",
+  });
+
+  assert.equal(summary.income, 1000);
+  assert.equal(summary.expense, 20);
+  assert.equal(summary.balance, 980);
+  assert.equal(summary.count, 4);
+  assert.deepEqual(summary.categoryTotals, [{ category: "餐饮", amount: 20 }]);
+});
+
+test("removes stale transfer tags when the matching opposite transaction is gone", () => {
+  const transactions = tagTransferTransactions([
+    {
+      id: "stale-payment",
+      date: "2026-03-06",
+      amount: -30435.91,
+      direction: "expense",
+      category: "其他",
+      accountId: "cmb-savings-3598",
+      type: "transfer",
+    },
+  ]);
+
+  assert.equal(transactions[0].type, undefined);
+});
+
+test("does not tag unassigned transactions as transfers", () => {
+  const transactions = tagTransferTransactions([
+    {
+      id: "unassigned-payment",
+      date: "2026-03-06",
+      amount: -100,
+      direction: "expense",
+      category: "其他",
+      accountId: UNASSIGNED_ACCOUNT_ID,
+    },
+    {
+      id: "assigned-income",
+      date: "2026-03-06",
+      amount: 100,
+      direction: "income",
+      category: "收入",
+      accountId: "bank-card",
+    },
+  ]);
+
+  assert.equal(transactions[0].type, undefined);
+  assert.equal(transactions[1].type, undefined);
 });
 
 test("filters transactions by selected months and unassigned account", () => {

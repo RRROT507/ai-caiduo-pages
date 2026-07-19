@@ -8,6 +8,7 @@ import {
   inferCategory,
   roundMoney,
   summarizeSelection,
+  tagTransferTransactions,
   toCsv,
 } from "./ledger-core.mjs";
 
@@ -37,6 +38,7 @@ const state = {
   visibleCalendarMonth: getCurrentMonth(),
   selectedAccountId: "all",
   categoryFilter: "all",
+  selectedTransactionIds: new Set(),
 };
 
 const elements = {
@@ -76,6 +78,8 @@ const elements = {
   pendingCount: document.querySelector("#pendingCount"),
   confirmImportButton: document.querySelector("#confirmImportButton"),
   discardImportButton: document.querySelector("#discardImportButton"),
+  selectedTransactionCount: document.querySelector("#selectedTransactionCount"),
+  selectVisibleTransactionsInput: document.querySelector("#selectVisibleTransactionsInput"),
   categoryFilter: document.querySelector("#categoryFilter"),
   exportButton: document.querySelector("#exportButton"),
   clearButton: document.querySelector("#clearButton"),
@@ -128,6 +132,7 @@ function bindEvents() {
 
   elements.accountFilterInput.addEventListener("change", () => {
     state.selectedAccountId = elements.accountFilterInput.value || "all";
+    clearTransactionSelection();
     render();
   });
 
@@ -201,7 +206,12 @@ function bindEvents() {
 
   elements.categoryFilter.addEventListener("change", () => {
     state.categoryFilter = elements.categoryFilter.value;
+    clearTransactionSelection();
     renderTransactions();
+  });
+
+  elements.selectVisibleTransactionsInput.addEventListener("change", () => {
+    toggleVisibleTransactionSelection(elements.selectVisibleTransactionsInput.checked);
   });
 
   elements.exportButton.addEventListener("click", () => {
@@ -219,6 +229,15 @@ function bindEvents() {
     }
 
     deleteTransaction(button.dataset.deleteId);
+  });
+
+  elements.transactionRows.addEventListener("change", (event) => {
+    const checkbox = event.target.closest("[data-select-id]");
+    if (!checkbox) {
+      return;
+    }
+
+    toggleTransactionSelection(checkbox.dataset.selectId, checkbox.checked);
   });
 
   elements.accountForm.addEventListener("submit", (event) => {
@@ -406,19 +425,61 @@ function clearTransactions() {
     return;
   }
 
-  if (!window.confirm("确认清空本机保存的全部交易？")) {
+  const selectedCount = state.selectedTransactionIds.size;
+  const hasSelection = selectedCount > 0;
+  const message = hasSelection
+    ? `确认删除已选择的 ${selectedCount} 条流水？`
+    : "确认清空本机保存的全部交易？";
+
+  if (!window.confirm(message)) {
     return;
   }
 
-  state.transactions = [];
+  state.transactions = hasSelection
+    ? state.transactions.filter((transaction) => !state.selectedTransactionIds.has(transaction.id))
+    : [];
+  state.selectedTransactionIds.clear();
   persist();
   render();
 }
 
 function deleteTransaction(id) {
   state.transactions = state.transactions.filter((transaction) => transaction.id !== id);
+  state.selectedTransactionIds.delete(id);
   persist();
   render();
+}
+
+function toggleTransactionSelection(id, selected) {
+  if (!id) {
+    return;
+  }
+
+  if (selected) {
+    state.selectedTransactionIds.add(id);
+  } else {
+    state.selectedTransactionIds.delete(id);
+  }
+  updateTransactionSelectionControls();
+}
+
+function toggleVisibleTransactionSelection(selected) {
+  for (const transaction of getVisibleTransactions()) {
+    if (!transaction.id) {
+      continue;
+    }
+
+    if (selected) {
+      state.selectedTransactionIds.add(transaction.id);
+    } else {
+      state.selectedTransactionIds.delete(transaction.id);
+    }
+  }
+  renderTransactions();
+}
+
+function clearTransactionSelection() {
+  state.selectedTransactionIds.clear();
 }
 
 function selectDateRangeBoundary(dateValue) {
@@ -433,6 +494,7 @@ function selectDateRangeBoundary(dateValue) {
   state.endDate = endDate;
   state.dateRangeDraftStart = "";
   state.datePickerOpen = false;
+  clearTransactionSelection();
   render();
 }
 
@@ -637,6 +699,7 @@ function renderTransactions() {
       createTransactionRow(transaction, transactionBalances.get(transaction.id)),
     ),
   );
+  updateTransactionSelectionControls(transactions);
 }
 
 function renderPendingImport() {
@@ -888,13 +951,30 @@ function createCategoryBar(item, maxAmount) {
 function createTransactionRow(transaction, accountBalance = 0) {
   const row = document.createElement("tr");
   const isIncome = transaction.direction === "income";
+  const isTransfer = transaction.type === "transfer";
+  const amountClass = isTransfer ? "transfer-text" : isIncome ? "income-text" : "expense-text";
+  const typeLabel = isTransfer ? "转账" : isIncome ? "收入" : "支出";
   row.innerHTML = `
+    <td data-label="选择" class="select-cell">
+      <input
+        type="checkbox"
+        data-select-id="${escapeHtml(transaction.id)}"
+        aria-label="选择 ${escapeHtml(transaction.description)}"
+        ${state.selectedTransactionIds.has(transaction.id) ? "checked" : ""}
+      />
+    </td>
     <td data-label="日期">${escapeHtml(transaction.date)}</td>
     <td data-label="账户">${escapeHtml(getAccountName(transaction.accountId))}</td>
     <td data-label="说明">${escapeHtml(transaction.description)}</td>
-    <td data-label="分类"><span class="tag">${escapeHtml(transaction.category)}</span></td>
-    <td data-label="类型">${isIncome ? "收入" : "支出"}</td>
-    <td data-label="金额" class="amount-cell ${isIncome ? "income-text" : "expense-text"}">${escapeHtml(
+    <td data-label="分类"><span class="tag ${isTransfer ? "transfer-tag" : ""}">${escapeHtml(
+      transaction.category,
+    )}</span></td>
+    <td data-label="类型">${
+      isTransfer
+        ? `<span class="type-tag transfer-tag">${escapeHtml(typeLabel)}</span>`
+        : escapeHtml(typeLabel)
+    }</td>
+    <td data-label="金额" class="amount-cell ${amountClass}">${escapeHtml(
       formatSignedMoney(transaction.amount),
     )}</td>
     <td data-label="账户余额" class="amount-cell">${escapeHtml(formatMoney(accountBalance || 0))}</td>
@@ -950,6 +1030,32 @@ function getVisibleTransactions() {
     .sort(compareLedgerTransactionsDescending);
 }
 
+function updateTransactionSelectionControls(visibleTransactions = getVisibleTransactions()) {
+  pruneSelectedTransactionIds();
+  const visibleIds = visibleTransactions
+    .map((transaction) => transaction.id)
+    .filter((id) => typeof id === "string" && id);
+  const visibleSelectedCount = visibleIds.filter((id) => state.selectedTransactionIds.has(id)).length;
+  const selectedCount = state.selectedTransactionIds.size;
+
+  elements.selectedTransactionCount.textContent = `已选择 ${selectedCount} 项`;
+  elements.clearButton.textContent = selectedCount > 0 ? "删除所选" : "清空";
+  elements.selectVisibleTransactionsInput.disabled = visibleIds.length === 0;
+  elements.selectVisibleTransactionsInput.checked =
+    visibleIds.length > 0 && visibleSelectedCount === visibleIds.length;
+  elements.selectVisibleTransactionsInput.indeterminate =
+    visibleSelectedCount > 0 && visibleSelectedCount < visibleIds.length;
+}
+
+function pruneSelectedTransactionIds() {
+  const existingIds = new Set(state.transactions.map((transaction) => transaction.id).filter(Boolean));
+  for (const id of [...state.selectedTransactionIds]) {
+    if (!existingIds.has(id)) {
+      state.selectedTransactionIds.delete(id);
+    }
+  }
+}
+
 function withId(transaction, sequence = getNextTransactionSequence()) {
   return {
     id: createId(),
@@ -1000,7 +1106,9 @@ function loadTransactions() {
       return [];
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? ensureTransactionSequences(parsed.filter(isValidTransaction)) : [];
+    return Array.isArray(parsed)
+      ? tagTransferTransactions(ensureTransactionSequences(parsed.filter(isValidTransaction)))
+      : [];
   } catch {
     return [];
   }
@@ -1163,6 +1271,8 @@ function getAvailableAccountName(baseName, suffix) {
 }
 
 function persist() {
+  state.transactions = tagTransferTransactions(state.transactions);
+  pruneSelectedTransactionIds();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.transactions));
 }
 

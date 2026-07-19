@@ -313,6 +313,138 @@ CMB Credit Card Statement (2026.03)
   }
 });
 
+test("selects multiple transaction rows and displays generic transfer tags", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer();
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: edgePath,
+  });
+
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") {
+        errors.push(message.text());
+      }
+    });
+    await page.addInitScript(() => {
+      const RealDate = Date;
+      const frozenTime = new RealDate("2026-03-19T12:00:00.000Z").valueOf();
+      class FrozenDate extends RealDate {
+        constructor(...args) {
+          super(...(args.length ? args : [frozenTime]));
+        }
+
+        static now() {
+          return frozenTime;
+        }
+      }
+      globalThis.Date = FrozenDate;
+    });
+
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem(
+        "ai-caiduo-accounts-v1",
+        JSON.stringify([
+          { id: "savings-3598", name: "招商银行 尾号3598", openingBalance: 50000 },
+          { id: "credit-1755", name: "招商银行信用卡 尾号1755", openingBalance: 0 },
+        ]),
+      );
+      localStorage.setItem(
+        "ai-caiduo-transactions-v1",
+        JSON.stringify([
+          {
+            id: "savings-payment",
+            date: "2026-03-06",
+            description: "储蓄卡还款",
+            amount: -30435.91,
+            direction: "expense",
+            category: "其他",
+            accountId: "savings-3598",
+            source: "file",
+            createdAt: "2026-03-06T08:00:00.000Z",
+            sequence: 1,
+          },
+          {
+            id: "credit-repayment",
+            date: "2026-03-06",
+            description: "信用卡入账",
+            amount: 30435.91,
+            direction: "income",
+            category: "收入",
+            accountId: "credit-1755",
+            source: "file",
+            createdAt: "2026-03-06T08:01:00.000Z",
+            sequence: 2,
+          },
+          {
+            id: "coffee",
+            date: "2026-03-07",
+            description: "咖啡",
+            amount: -20,
+            direction: "expense",
+            category: "餐饮",
+            accountId: "savings-3598",
+            source: "manual",
+            createdAt: "2026-03-07T08:00:00.000Z",
+            sequence: 3,
+          },
+        ]),
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+
+    assert.equal(errors.join(" | "), "");
+    assert.equal(await page.locator("#transactionRows tr").count(), 3);
+    assert.equal(await page.locator(".type-tag.transfer-tag").count(), 2);
+    assert.equal(await page.locator(".amount-cell.transfer-text").count(), 2);
+    assert.equal(await page.locator(".tag.transfer-tag").count(), 2);
+    assert.equal(await page.locator("#incomeTotal").textContent(), "¥0.00");
+    assert.equal(await page.locator("#expenseTotal").textContent(), "¥20.00");
+
+    await page.check('[data-select-id="savings-payment"]');
+    await page.check('[data-select-id="credit-repayment"]');
+    assert.match(await page.locator("#selectedTransactionCount").textContent(), /已选择 2 项/u);
+    assert.equal(await page.locator("#clearButton").textContent(), "删除所选");
+
+    await page.selectOption("#categoryFilter", "餐饮");
+    assert.match(await page.locator("#selectedTransactionCount").textContent(), /已选择 0 项/u);
+    assert.equal(await page.locator("#clearButton").textContent(), "清空");
+    await page.selectOption("#categoryFilter", "all");
+    await page.check('[data-select-id="savings-payment"]');
+    await page.check('[data-select-id="credit-repayment"]');
+    assert.match(await page.locator("#selectedTransactionCount").textContent(), /已选择 2 项/u);
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.click("#clearButton");
+
+    assert.equal(await page.locator("#transactionRows tr").count(), 1);
+    assert.match(await page.locator("#transactionRows").textContent(), /咖啡/u);
+    assert.match(await page.locator("#selectedTransactionCount").textContent(), /已选择 0 项/u);
+    assert.equal(await page.locator("#clearButton").textContent(), "清空");
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
 test("initializes the date range from the local calendar date", async (t) => {
   if (!existsSync(edgePath)) {
     t.skip("Microsoft Edge is not available in this environment");

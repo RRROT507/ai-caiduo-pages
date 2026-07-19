@@ -647,6 +647,15 @@ textarea {
   width: 160px;
 }
 
+.selection-count {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .table-wrap {
   width: 100%;
   overflow-x: auto;
@@ -654,7 +663,7 @@ textarea {
 
 table {
   width: 100%;
-  min-width: 860px;
+  min-width: 940px;
   border-collapse: collapse;
 }
 
@@ -682,6 +691,17 @@ td {
   font-variant-numeric: tabular-nums;
 }
 
+.select-cell {
+  width: 44px;
+  text-align: center;
+}
+
+.select-cell input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--green-dark);
+}
+
 .action-cell {
   width: 84px;
   text-align: right;
@@ -697,6 +717,11 @@ td {
   font-weight: 800;
 }
 
+.transfer-text {
+  color: #69716d;
+  font-weight: 800;
+}
+
 .tag {
   display: inline-flex;
   min-width: 48px;
@@ -707,6 +732,22 @@ td {
   color: var(--green-dark);
   font-size: 12px;
   font-weight: 800;
+}
+
+.type-tag {
+  display: inline-flex;
+  min-width: 48px;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.tag.transfer-tag,
+.type-tag.transfer-tag {
+  background: #ecefed;
+  color: #66706a;
 }
 
 .delete-button {
@@ -781,6 +822,10 @@ td {
     width: 100%;
   }
 
+  .selection-count {
+    min-height: 0;
+  }
+
   .overview-panel,
   .entry-panel,
   .import-panel {
@@ -853,8 +898,13 @@ td {
   }
 
   .amount-cell,
+  .select-cell,
   .action-cell {
     width: 100%;
     text-align: right;
+  }
+
+  .select-cell {
+    justify-content: space-between;
   }
 }

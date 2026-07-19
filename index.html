@@ -268,6 +268,7 @@
             <h2 id="transactions-title">交易记录</h2>
           </div>
           <div class="toolbar">
+            <span id="selectedTransactionCount" class="selection-count" aria-live="polite">已选择 0 项</span>
             <select id="categoryFilter" aria-label="筛选分类"></select>
             <button id="exportButton" class="ghost-button" type="button">导出 CSV</button>
             <button id="clearButton" class="danger-button" type="button">清空</button>
@@ -281,6 +282,13 @@
           <table>
             <thead>
               <tr>
+                <th class="select-cell">
+                  <input
+                    id="selectVisibleTransactionsInput"
+                    type="checkbox"
+                    aria-label="选择当前可见流水"
+                  />
+                </th>
                 <th>日期</th>
                 <th>账户</th>
                 <th>说明</th>

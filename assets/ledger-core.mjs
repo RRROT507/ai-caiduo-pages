@@ -44,21 +44,25 @@ export function summarizeMonth(transactions, monthKey) {
 }
 
 export function summarizeSelection(transactions, filters = {}) {
-  const selectedTransactions = filterLedgerTransactions(transactions, filters);
+  const typedTransactions = tagTransferTransactions(transactions);
+  const selectedTransactions = filterLedgerTransactions(typedTransactions, filters);
+  const cashFlowTransactions = selectedTransactions.filter(
+    (transaction) => transaction.type !== "transfer",
+  );
 
   const income = roundMoney(
-    selectedTransactions
+    cashFlowTransactions
       .filter((transaction) => Number(transaction.amount) > 0)
       .reduce((sum, transaction) => sum + Number(transaction.amount), 0),
   );
   const expense = roundMoney(
-    selectedTransactions
+    cashFlowTransactions
       .filter((transaction) => Number(transaction.amount) < 0)
       .reduce((sum, transaction) => sum + Math.abs(Number(transaction.amount)), 0),
   );
   const categoryMap = new Map();
 
-  for (const transaction of selectedTransactions) {
+  for (const transaction of cashFlowTransactions) {
     if (Number(transaction.amount) >= 0) {
       continue;
     }
@@ -81,6 +85,69 @@ export function summarizeSelection(transactions, filters = {}) {
     count: selectedTransactions.length,
     categoryTotals,
   };
+}
+
+export function tagTransferTransactions(transactions) {
+  const items = transactions.map((transaction, index) => ({
+    transaction,
+    index,
+    amount: roundMoney(Number(transaction.amount)),
+    accountId: String(transaction.accountId || "").trim(),
+    date: String(transaction.date || ""),
+  }));
+  const groups = new Map();
+
+  for (const item of items) {
+    if (
+      !item.accountId ||
+      item.accountId === UNASSIGNED_ACCOUNT_ID ||
+      !isDateKey(item.date) ||
+      !Number.isFinite(item.amount) ||
+      item.amount === 0
+    ) {
+      continue;
+    }
+
+    const key = `${item.date}|${Math.abs(item.amount).toFixed(2)}`;
+    const group = groups.get(key) || { income: [], expense: [] };
+    if (item.amount > 0) {
+      group.income.push(item);
+    } else {
+      group.expense.push(item);
+    }
+    groups.set(key, group);
+  }
+
+  const transferIndexes = new Set();
+  for (const group of groups.values()) {
+    const usedIncomeIndexes = new Set();
+    for (const expenseItem of group.expense) {
+      const incomeIndex = group.income.findIndex(
+        (incomeItem, index) =>
+          !usedIncomeIndexes.has(index) && incomeItem.accountId !== expenseItem.accountId,
+      );
+      if (incomeIndex < 0) {
+        continue;
+      }
+
+      usedIncomeIndexes.add(incomeIndex);
+      transferIndexes.add(expenseItem.index);
+      transferIndexes.add(group.income[incomeIndex].index);
+    }
+  }
+
+  return transactions.map((transaction, index) => {
+    const shouldBeTransfer = transferIndexes.has(index);
+    if (shouldBeTransfer) {
+      return transaction.type === "transfer" ? transaction : { ...transaction, type: "transfer" };
+    }
+    if (transaction.type !== "transfer") {
+      return transaction;
+    }
+
+    const { type, ...withoutType } = transaction;
+    return withoutType;
+  });
 }
 
 export function filterLedgerTransactions(transactions, filters = {}) {
@@ -151,7 +218,11 @@ export function toCsv(transactions, options = {}) {
     return [
       transaction.date,
       accountName,
-      transaction.direction === "income" ? "收入" : "支出",
+      transaction.type === "transfer"
+        ? "转账"
+        : transaction.direction === "income"
+          ? "收入"
+          : "支出",
       transaction.category,
       transaction.description,
       Number(transaction.amount).toFixed(2),
