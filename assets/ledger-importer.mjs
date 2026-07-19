@@ -2,6 +2,7 @@ import { inferCategory, parseLedgerText, roundMoney } from "./ledger-core.mjs";
 
 const PDF_TYPE = "application/pdf";
 const TEXT_LIKE_EXTENSIONS = [".txt", ".csv", ".tsv", ".ofx", ".qfx"];
+const CMB_INSTITUTION = "招商银行";
 const CMB_TRANSACTION_STATEMENT_PATTERN =
   /招商银行交易流水|Transaction Statement of China Merchants Bank/u;
 const CMB_CREDIT_CARD_PATTERN = /招商银行信用卡对账单|CMB Credit Card Statement/u;
@@ -34,11 +35,13 @@ export async function analyzeLedgerFile(file, options = {}) {
     }
   }
 
-  const localTransactions = parseLocalStatementText(extractedText, { fallbackYear });
+  const localResult = parseLocalStatementText(extractedText, { fallbackYear });
+  const localTransactions = localResult.transactions;
 
   if (localTransactions.length > 0) {
     return {
       transactions: localTransactions,
+      accountCandidate: localResult.accountCandidate,
       mode: "local",
       message: "已使用本地解析生成预览",
     };
@@ -69,37 +72,53 @@ export function parseCmbCreditCardStatementText(text, options = {}) {
   return transactions;
 }
 
-export function parseCmbTransactionStatementText(text) {
-  const transactions = [];
+export function parseCmbTransactionStatement(text) {
+  const rows = [];
 
   for (const rawLine of String(text).split(/\r?\n/u)) {
     const line = rawLine.replace(/\s+/gu, " ").trim();
     const parsed = parseCmbTransactionStatementLine(line);
     if (parsed) {
-      transactions.push(parsed);
+      rows.push(parsed);
     }
   }
 
-  return transactions;
+  const transactions = rows.map(({ statementBalance, ...transaction }) => transaction);
+  return {
+    transactions,
+    accountCandidate: buildCmbAccountCandidate(text, rows),
+  };
+}
+
+export function parseCmbTransactionStatementText(text) {
+  return parseCmbTransactionStatement(text).transactions;
 }
 
 function parseLocalStatementText(text, options) {
   if (!text.trim()) {
-    return [];
+    return { transactions: [], accountCandidate: null };
   }
 
   if (CMB_TRANSACTION_STATEMENT_PATTERN.test(text)) {
-    return parseCmbTransactionStatementText(text);
+    return parseCmbTransactionStatement(text);
   }
 
   if (CMB_CREDIT_CARD_PATTERN.test(text)) {
-    return parseCmbCreditCardStatementText(text, options);
+    return {
+      transactions: parseCmbCreditCardStatementText(text, options),
+      accountCandidate: null,
+    };
   }
 
-  return parseLedgerText(text, { fallbackYear: options.fallbackYear }).map((transaction) => ({
-    ...transaction,
-    source: "file",
-  }));
+  return {
+    transactions: parseLedgerText(text, { fallbackYear: options.fallbackYear }).map(
+      (transaction) => ({
+        ...transaction,
+        source: "file",
+      }),
+    ),
+    accountCandidate: null,
+  };
 }
 
 async function analyzeWithEndpoint(file, extractedText, options) {
@@ -206,20 +225,21 @@ function textContentToLines(content) {
 
 function parseCmbTransactionStatementLine(line) {
   const match = line.match(
-    /^(\d{4})-(\d{2})-(\d{2})\s+[A-Z]{3}\s+([-+]?\d[\d,]*\.\d{2})\s+[-+]?\d[\d,]*\.\d{2}(?:\s+(.+))?$/u,
+    /^(\d{4})-(\d{2})-(\d{2})\s+[A-Z]{3}\s+([-+]?\d[\d,]*\.\d{2})\s+([-+]?\d[\d,]*\.\d{2})(?:\s+(.+))?$/u,
   );
   if (!match) {
     return null;
   }
 
   const amount = parseAmount(match[4]);
+  const statementBalance = parseAmount(match[5]);
   if (!Number.isFinite(amount) || amount === 0) {
     return null;
   }
 
   const direction = amount < 0 ? "expense" : "income";
   const signedAmount = direction === "expense" ? -Math.abs(amount) : Math.abs(amount);
-  const description = String(match[5] || "招商银行交易").trim();
+  const description = String(match[6] || "招商银行交易").trim();
 
   return {
     date: `${match[1]}-${match[2]}-${match[3]}`,
@@ -228,7 +248,38 @@ function parseCmbTransactionStatementLine(line) {
     direction,
     category: inferCategory(description, direction),
     source: "file",
+    statementBalance: Number.isFinite(statementBalance) ? roundMoney(statementBalance) : null,
   };
+}
+
+function buildCmbAccountCandidate(text, rows) {
+  const accountNumber = findCmbStatementAccountNumber(text);
+  if (!accountNumber) {
+    return null;
+  }
+
+  const accountNumberLast4 = accountNumber.slice(-4);
+  const firstRowWithBalance = rows.find((row) => Number.isFinite(row.statementBalance));
+  const openingBalanceEstimate = firstRowWithBalance
+    ? roundMoney(firstRowWithBalance.statementBalance - firstRowWithBalance.amount)
+    : 0;
+
+  return {
+    institution: CMB_INSTITUTION,
+    accountName: `${CMB_INSTITUTION} 尾号${accountNumberLast4}`,
+    accountNumberLast4,
+    accountFingerprint: `cmb:${accountNumberLast4}`,
+    openingBalanceEstimate,
+  };
+}
+
+function findCmbStatementAccountNumber(text) {
+  const beforeTransactions =
+    String(text).split(/\n(?=\d{4}-\d{2}-\d{2}\s+[A-Z]{3}\s+)/u)[0] || "";
+  const candidates = [...beforeTransactions.matchAll(/\b\d{12,24}\b/gu)].map(
+    (match) => match[0],
+  );
+  return candidates[0] || "";
 }
 
 function parseCmbTransactionLine(line, statement) {

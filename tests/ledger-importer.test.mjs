@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import {
   analyzeLedgerFile,
   parseCmbCreditCardStatementText,
+  parseCmbTransactionStatement,
 } from "../assets/ledger-importer.mjs";
 
 test("analyzes a local statement text file with fallback parsing", async () => {
@@ -148,6 +149,7 @@ test("parses China Merchants Bank transaction statement rows by signed amount", 
       `招商银行交易流水
 Transaction Statement of China Merchants Bank
 2026-01-01 -- 2026-06-30
+卡 账号：6214850121113598
 申请时间：2026-07-18 16:02:56 验证码：3EP63HFA
 交易日期 币种 交易金额 账户余额 交易摘要 交易对方信息
 Transaction
@@ -164,6 +166,13 @@ Amount
   const result = await analyzeLedgerFile(file, { fallbackYear: 2026 });
 
   assert.equal(result.mode, "local");
+  assert.deepEqual(result.accountCandidate, {
+    institution: "招商银行",
+    accountName: "招商银行 尾号3598",
+    accountNumberLast4: "3598",
+    accountFingerprint: "cmb:3598",
+    openingBalanceEstimate: 3968.26,
+  });
   assert.deepEqual(
     result.transactions.map(({ date, description, amount, direction, category, source }) => ({
       date,
@@ -200,6 +209,25 @@ Amount
       },
     ],
   );
+});
+
+test("extracts China Merchants Bank account candidate from transaction statement", () => {
+  const result = parseCmbTransactionStatement(
+    `招商银行交易流水
+Transaction Statement of China Merchants Bank
+卡 账号：6214850121113598
+交易日期 币种 交易金额 账户余额 交易摘要 交易对方信息
+2026-02-23 CNY 31.74 4,000.00 朝朝宝转出
+2026-02-23 CNY -4,000.00 0.00 转账汇款 薛瑾 6214831001555389`,
+  );
+
+  assert.deepEqual(result.accountCandidate, {
+    institution: "招商银行",
+    accountName: "招商银行 尾号3598",
+    accountNumberLast4: "3598",
+    accountFingerprint: "cmb:3598",
+    openingBalanceEstimate: 3968.26,
+  });
 });
 
 test("parses China Merchants Bank credit card statement rows", () => {
