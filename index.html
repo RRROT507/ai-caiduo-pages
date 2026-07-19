@@ -161,6 +161,17 @@
           <select id="importAccountInput" name="importAccount"></select>
         </label>
 
+        <div id="detectedAccountPanel" class="detected-account-panel is-hidden">
+          <div>
+            <strong id="detectedAccountTitle">未识别到账户</strong>
+            <span id="detectedAccountDetail"></span>
+          </div>
+          <label id="addDetectedAccountControl" class="detected-account-choice">
+            <input id="addDetectedAccountInput" type="checkbox" checked />
+            <span>新增该账户并导入</span>
+          </label>
+        </div>
+
         <div class="file-meta">
           <strong id="fileName">尚未选择文件</strong>
           <span>文件只在当前浏览器中处理；确认入账前不会保存交易。</span>

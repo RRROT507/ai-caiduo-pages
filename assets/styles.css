@@ -275,6 +275,39 @@ textarea {
   margin-top: 12px;
 }
 
+.detected-account-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #c8ddd5;
+  border-radius: 8px;
+  background: #f4fbf8;
+}
+
+.detected-account-panel strong,
+.detected-account-panel span {
+  display: block;
+}
+
+.detected-account-panel strong {
+  color: #153f34;
+  font-size: 0.95rem;
+}
+
+.detected-account-panel span {
+  color: #52645f;
+  font-size: 0.82rem;
+}
+
+.detected-account-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

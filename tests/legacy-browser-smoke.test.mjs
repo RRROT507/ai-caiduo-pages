@@ -139,6 +139,29 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
     await page.waitForTimeout(300);
     assert.equal(await page.locator("#transactionRows tr").count(), 7);
 
+    await page.setInputFiles("#fileInput", {
+      name: "cmb-transaction-statement.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(`招商银行交易流水
+Transaction Statement of China Merchants Bank
+卡 账号：6214850121113598
+交易日期 币种 交易金额 账户余额 交易摘要 交易对方信息
+2026-07-05 CNY 31.74 4,000.00 朝朝宝转出`),
+    });
+    await page.click("#importButton");
+    await page.waitForTimeout(300);
+
+    assert.ok(await page.locator("#detectedAccountPanel").isVisible());
+    assert.match(await page.locator("#detectedAccountPanel").textContent(), /招商银行 尾号3598/u);
+    assert.match(await page.locator("#pendingRows tr").first().textContent(), /\+¥31\.74/u);
+
+    await page.click("#confirmImportButton");
+    await page.waitForTimeout(300);
+    assert.equal(
+      await page.locator("#accountList input[value='招商银行 尾号3598']").count(),
+      1,
+    );
+
     await page.selectOption("#importAccountInput", "alipay");
     await page.setInputFiles("#fileInput", {
       name: "alipay-statement.txt",

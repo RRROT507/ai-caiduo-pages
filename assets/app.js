@@ -25,6 +25,9 @@ const state = {
   transactions: loadTransactions(),
   accounts: loadAccounts(),
   pendingTransactions: [],
+  pendingAccountCandidate: null,
+  pendingAccountMode: "manual",
+  pendingMatchedAccountId: "",
   selectedFile: null,
   startMonth: getCurrentMonth(),
   endMonth: getCurrentMonth(),
@@ -52,6 +55,11 @@ const elements = {
   fileInput: document.querySelector("#fileInput"),
   fileName: document.querySelector("#fileName"),
   importAccountInput: document.querySelector("#importAccountInput"),
+  detectedAccountPanel: document.querySelector("#detectedAccountPanel"),
+  detectedAccountTitle: document.querySelector("#detectedAccountTitle"),
+  detectedAccountDetail: document.querySelector("#detectedAccountDetail"),
+  addDetectedAccountControl: document.querySelector("#addDetectedAccountControl"),
+  addDetectedAccountInput: document.querySelector("#addDetectedAccountInput"),
   importButton: document.querySelector("#importButton"),
   importStatus: document.querySelector("#importStatus"),
   pendingPanel: document.querySelector("#pendingPanel"),
@@ -122,6 +130,7 @@ function bindEvents() {
     state.selectedFile = elements.fileInput.files?.[0] || null;
     elements.fileName.textContent = state.selectedFile ? state.selectedFile.name : "尚未选择文件";
     state.pendingTransactions = [];
+    clearPendingAccountCandidate();
     renderPendingImport();
     setImportStatus("");
   });
@@ -253,6 +262,7 @@ async function importSelectedFile() {
 
     if (result.transactions.length === 0) {
       state.pendingTransactions = [];
+      clearPendingAccountCandidate();
       renderPendingImport();
       setImportStatus(result.message || "没有识别到可导入交易");
       return;
@@ -262,10 +272,21 @@ async function importSelectedFile() {
       ...transaction,
       previewId: createId(),
     }));
+    const accountResolution = resolveImportAccountCandidate(result.accountCandidate);
+    state.pendingAccountCandidate = accountResolution.candidate;
+    state.pendingAccountMode = accountResolution.mode;
+    state.pendingMatchedAccountId = accountResolution.accountId;
+
+    if (accountResolution.mode === "matched") {
+      elements.importAccountInput.value = accountResolution.accountId;
+    } else if (accountResolution.mode === "new") {
+      elements.addDetectedAccountInput.checked = true;
+    }
     renderPendingImport();
     setImportStatus(`${result.message}，请确认后入账`);
   } catch {
     state.pendingTransactions = [];
+    clearPendingAccountCandidate();
     renderPendingImport();
     setImportStatus("识别失败，请换一个可复制文字的账单文件");
   } finally {
@@ -279,7 +300,20 @@ function confirmPendingImport() {
     return;
   }
 
-  const importAccountId = normalizeAccountId(elements.importAccountInput.value);
+  let importAccountId = normalizeAccountId(elements.importAccountInput.value);
+
+  if (
+    state.pendingAccountMode === "new" &&
+    state.pendingAccountCandidate &&
+    elements.addDetectedAccountInput.checked
+  ) {
+    const createdAccount = createAccountFromCandidate(state.pendingAccountCandidate);
+    importAccountId = createdAccount.id;
+  }
+
+  if (state.pendingAccountMode === "matched" && state.pendingMatchedAccountId) {
+    importAccountId = state.pendingMatchedAccountId;
+  }
   const baseSequence = getMaxTransactionSequence();
   const imported = state.pendingTransactions.map(({ previewId, ...transaction }, index) =>
     withId({ ...transaction, accountId: importAccountId }, baseSequence + index + 1),
@@ -287,6 +321,7 @@ function confirmPendingImport() {
   state.transactions = [...imported, ...state.transactions];
   state.pendingTransactions = [];
   persist();
+  clearPendingAccountCandidate();
   clearSelectedFile();
   setImportStatus(`已入账 ${imported.length} 笔`);
   render();
@@ -294,6 +329,7 @@ function confirmPendingImport() {
 
 function discardPendingImport(message = "") {
   state.pendingTransactions = [];
+  clearPendingAccountCandidate();
   renderPendingImport();
   setImportStatus(message);
 }
@@ -503,6 +539,32 @@ function renderPendingImport() {
   elements.pendingCount.textContent = `${state.pendingTransactions.length} 笔`;
   elements.confirmImportButton.disabled = !hasPending;
   replaceChildrenCompat(elements.pendingRows, ...state.pendingTransactions.map(createPendingRow));
+  renderDetectedAccountPanel();
+}
+
+function renderDetectedAccountPanel() {
+  const candidate = state.pendingAccountCandidate;
+  const hasCandidate = Boolean(candidate && state.pendingTransactions.length > 0);
+  elements.detectedAccountPanel.classList.toggle("is-hidden", !hasCandidate);
+  if (!hasCandidate) {
+    return;
+  }
+
+  if (state.pendingAccountMode === "matched") {
+    const accountName = getAccountName(state.pendingMatchedAccountId);
+    elements.detectedAccountTitle.textContent = `已匹配账户：${accountName}`;
+    elements.detectedAccountDetail.textContent = candidate.accountNumberLast4
+      ? `尾号 ${candidate.accountNumberLast4}`
+      : "";
+    elements.addDetectedAccountControl.classList.add("is-hidden");
+    return;
+  }
+
+  elements.detectedAccountTitle.textContent = `识别到新账户：${candidate.accountName}`;
+  elements.detectedAccountDetail.textContent = `初始金额 ${formatMoney(
+    candidate.openingBalanceEstimate || 0,
+  )}`;
+  elements.addDetectedAccountControl.classList.remove("is-hidden");
 }
 
 function renderCategoryOptions() {
@@ -874,7 +936,69 @@ function normalizeAccount(account) {
     ...account,
     name: String(account.name).trim(),
     openingBalance: parseMoneyInput(account.openingBalance),
+    institution: String(account.institution || "").trim(),
+    accountNumberLast4: String(account.accountNumberLast4 || "").trim(),
+    accountFingerprint: String(account.accountFingerprint || "").trim(),
   };
+}
+
+function resolveImportAccountCandidate(candidate) {
+  if (!candidate) {
+    return { mode: "manual", accountId: "", candidate: null };
+  }
+
+  const fingerprint = String(candidate.accountFingerprint || "").trim();
+  const byFingerprint = fingerprint
+    ? state.accounts.find((account) => account.accountFingerprint === fingerprint)
+    : null;
+  if (byFingerprint) {
+    return { mode: "matched", accountId: byFingerprint.id, candidate };
+  }
+
+  const accountName = String(candidate.accountName || "").trim();
+  const byName = accountName
+    ? state.accounts.find((account) => account.name === accountName)
+    : null;
+  if (byName) {
+    return { mode: "matched", accountId: byName.id, candidate };
+  }
+
+  return { mode: "new", accountId: "", candidate };
+}
+
+function createAccountFromCandidate(candidate) {
+  const account = normalizeAccount({
+    id: createId(),
+    name: getAvailableAccountName(candidate.accountName, candidate.accountNumberLast4),
+    openingBalance: candidate.openingBalanceEstimate,
+    institution: candidate.institution,
+    accountNumberLast4: candidate.accountNumberLast4,
+    accountFingerprint: candidate.accountFingerprint,
+    createdAt: new Date().toISOString(),
+  });
+
+  state.accounts = [...state.accounts, account].filter(Boolean);
+  persistAccounts();
+  return account;
+}
+
+function getAvailableAccountName(baseName, suffix) {
+  const fallbackName = suffix ? `招商银行 尾号${suffix}` : "招商银行账户";
+  const name = String(baseName || fallbackName).trim();
+  if (!state.accounts.some((account) => account.name === name)) {
+    return name;
+  }
+
+  const suffixedName = suffix ? `招商银行 尾号${suffix}` : `${name} 2`;
+  if (!state.accounts.some((account) => account.name === suffixedName)) {
+    return suffixedName;
+  }
+
+  let index = 2;
+  while (state.accounts.some((account) => account.name === `${suffixedName} ${index}`)) {
+    index += 1;
+  }
+  return `${suffixedName} ${index}`;
 }
 
 function persist() {
@@ -895,6 +1019,13 @@ function clearSelectedFile() {
   state.selectedFile = null;
   elements.fileInput.value = "";
   elements.fileName.textContent = "尚未选择文件";
+  clearPendingAccountCandidate();
+}
+
+function clearPendingAccountCandidate() {
+  state.pendingAccountCandidate = null;
+  state.pendingAccountMode = "manual";
+  state.pendingMatchedAccountId = "";
 }
 
 function setImportStatus(message) {
