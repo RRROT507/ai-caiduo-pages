@@ -422,6 +422,212 @@ test("scopes category options by type and adds quick transfer entries", async (t
   }
 });
 
+test("uses saved merchant history to suggest quick entry categories", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer();
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: edgePath,
+  });
+
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem(
+        "ai-caiduo-transactions-v1",
+        JSON.stringify([
+          {
+            id: "learned-merchant-1",
+            date: "2026-07-01",
+            description: "支付宝-蓝鲸空间",
+            amount: -88,
+            direction: "expense",
+            category: "娱乐",
+            sequence: 1,
+          },
+          {
+            id: "learned-merchant-2",
+            date: "2026-07-02",
+            description: "微信支付-蓝鲸空间",
+            amount: -66,
+            direction: "expense",
+            category: "娱乐",
+            sequence: 2,
+          },
+        ]),
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+
+    await page.selectOption("#directionInput", "expense");
+    await page.fill("#descriptionInput", "财付通-蓝鲸空间");
+    assert.equal(await page.locator("#categoryInput").inputValue(), "娱乐");
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
+test("uses saved merchant history to suggest imported transaction categories", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer();
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: edgePath,
+  });
+
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem(
+        "ai-caiduo-transactions-v1",
+        JSON.stringify([
+          {
+            id: "learned-import-merchant-1",
+            date: "2026-07-01",
+            description: "支付宝-蓝鲸空间",
+            amount: -88,
+            direction: "expense",
+            category: "娱乐",
+            sequence: 1,
+          },
+          {
+            id: "learned-import-merchant-2",
+            date: "2026-07-02",
+            description: "微信支付-蓝鲸空间",
+            amount: -66,
+            direction: "expense",
+            category: "娱乐",
+            sequence: 2,
+          },
+        ]),
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+
+    await page.setInputFiles("#fileInput", {
+      name: "learned-merchant.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("2026-07-03 财付通-蓝鲸空间 -58.00"),
+    });
+    await page.click("#importButton");
+    await page.waitForSelector("#pendingRows tr");
+
+    assert.equal(await page.locator("#pendingRows select").inputValue(), "娱乐");
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
+test("preserves explicit AI import categories over merchant history", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer({
+    aiImportPayload: {
+      transactions: [
+        {
+          date: "2026-07-03",
+          description: "财付通-蓝鲸空间",
+          amount: "-58",
+          category: "购物",
+        },
+      ],
+    },
+  });
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: edgePath,
+  });
+
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem(
+        "ai-caiduo-transactions-v1",
+        JSON.stringify([
+          {
+            id: "learned-ai-merchant-1",
+            date: "2026-07-01",
+            description: "支付宝-蓝鲸空间",
+            amount: -88,
+            direction: "expense",
+            category: "娱乐",
+            sequence: 1,
+          },
+          {
+            id: "learned-ai-merchant-2",
+            date: "2026-07-02",
+            description: "微信支付-蓝鲸空间",
+            amount: -66,
+            direction: "expense",
+            category: "娱乐",
+            sequence: 2,
+          },
+        ]),
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.evaluate((endpoint) => {
+      globalThis.AI_CAIDUO_IMPORT_ENDPOINT = endpoint;
+    }, `${server.url}ai-import`);
+
+    await page.setInputFiles("#fileInput", {
+      name: "ai-explicit-category.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("ignored"),
+    });
+    await page.click("#importButton");
+    await page.waitForSelector("#pendingRows tr");
+
+    assert.equal(await page.locator("#pendingRows select").inputValue(), "购物");
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
 test("keeps AI-imported single transfer rows after confirm and reload", async (t) => {
   if (!existsSync(edgePath)) {
     t.skip("Microsoft Edge is not available in this environment");

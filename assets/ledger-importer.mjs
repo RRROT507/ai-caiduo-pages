@@ -1,8 +1,10 @@
 import {
   inferCategory,
+  isFallbackCategory,
   normalizeTransactionCategory,
   normalizeTransactionType,
   parseLedgerText,
+  recommendCategory,
   roundMoney,
 } from "./ledger-core.mjs";
 
@@ -407,6 +409,19 @@ function normalizeAiTransaction(transaction) {
       ? "income"
       : "expense";
   const signedAmount = direction === "income" ? Math.abs(amount) : -Math.abs(amount);
+  const categoryType = isTransfer ? "transfer" : direction;
+  const normalizedCategory = normalizeTransactionCategory(
+    transaction.category,
+    categoryType,
+    description,
+  );
+  const recommendation = recommendCategory(description, categoryType);
+  const category =
+    isFallbackCategory(normalizedCategory, categoryType) &&
+    recommendation.source === "rule" &&
+    recommendation.confidence === "high"
+      ? recommendation.category
+      : normalizedCategory;
 
   return {
     date,
@@ -414,11 +429,7 @@ function normalizeAiTransaction(transaction) {
     amount: roundMoney(signedAmount),
     direction,
     ...(isTransfer ? { type: "transfer", transferMatch: "explicit" } : {}),
-    category: normalizeTransactionCategory(
-      transaction.category,
-      isTransfer ? "transfer" : direction,
-      description,
-    ),
+    category,
     source: "ai",
   };
 }

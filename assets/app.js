@@ -2,6 +2,7 @@ import { analyzeLedgerFile } from "./ledger-importer.mjs";
 import {
   UNASSIGNED_ACCOUNT_ID,
   UNASSIGNED_ACCOUNT_NAME,
+  buildMerchantCategoryHistory,
   calculateRunningBalances,
   compareLedgerTransactionsDescending,
   filterLedgerTransactions,
@@ -9,10 +10,11 @@ import {
   getTransactionType,
   getTransactionTypes,
   getTypeLabel,
-  inferCategory,
+  isFallbackCategory,
   normalizeLedgerTransaction,
   normalizeTransactionCategory,
   normalizeTransactionType,
+  recommendCategory,
   roundMoney,
   summarizeSelection,
   tagTransferTransactions,
@@ -162,7 +164,7 @@ function bindEvents() {
   elements.descriptionInput.addEventListener("input", () => {
     const type = normalizeTransactionType(elements.directionInput.value);
     if (type !== "transfer") {
-      elements.categoryInput.value = inferCategory(elements.descriptionInput.value, type);
+      elements.categoryInput.value = recommendEntryCategory(type);
     }
   });
 
@@ -384,8 +386,9 @@ async function importSelectedFile() {
       return;
     }
 
+    const categoryHistory = buildMerchantCategoryHistory(state.transactions);
     state.pendingTransactions = result.transactions.map((transaction) => ({
-      ...normalizeLedgerTransaction(transaction),
+      ...applyCategoryRecommendation(transaction, categoryHistory),
       previewId: createId(),
     }));
     const accountResolution = resolveImportAccountCandidate(result.accountCandidate);
@@ -891,13 +894,47 @@ function renderTransferToAccountSelect(selectedValue) {
 function updateEntryTypeControls(options = {}) {
   const type = normalizeTransactionType(elements.directionInput.value);
   const inferredCategory = options.inferFromDescription
-    ? inferCategory(elements.descriptionInput.value, type)
+    ? recommendEntryCategory(type)
     : "";
 
   renderCategoryOptions(type, inferredCategory);
   elements.accountInputLabel.textContent = type === "transfer" ? "转出账户" : "账户";
   elements.transferToAccountField.classList.toggle("is-hidden", type !== "transfer");
   renderTransferToAccountSelect(elements.transferToAccountInput.value);
+}
+
+function recommendEntryCategory(type) {
+  return recommendCategory(elements.descriptionInput.value, {
+    type,
+    history: buildMerchantCategoryHistory(state.transactions),
+  }).category;
+}
+
+function applyCategoryRecommendation(
+  transaction,
+  history = buildMerchantCategoryHistory(state.transactions),
+) {
+  const normalized = normalizeLedgerTransaction(transaction);
+  const type = getTransactionType(normalized);
+  if (type === "transfer") {
+    return normalized;
+  }
+
+  const recommendation = recommendCategory(normalized.description, {
+    type,
+    history,
+  });
+  return shouldUseCategoryRecommendation(normalized.category, type, recommendation)
+    ? { ...normalized, category: recommendation.category }
+    : normalized;
+}
+
+function shouldUseCategoryRecommendation(category, type, recommendation) {
+  if (!isFallbackCategory(category, type) || recommendation.confidence !== "high") {
+    return false;
+  }
+
+  return recommendation.source === "user-history" || recommendation.source === "rule";
 }
 
 function renderAccountList() {

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   UNASSIGNED_ACCOUNT_ID,
+  buildMerchantCategoryHistory,
   calculateRunningBalances,
   compareLedgerTransactionsDescending,
   filterLedgerTransactions,
@@ -11,6 +12,7 @@ import {
   inferCategory,
   normalizeTransactionCategory,
   parseLedgerText,
+  recommendCategory,
   summarizeMonth,
   summarizeSelection,
   tagTransferTransactions,
@@ -53,6 +55,99 @@ test("normalizes categories so they match the transaction type", () => {
   assert.equal(normalizeTransactionCategory("餐饮", "income", "工资入账"), "工资");
   assert.equal(normalizeTransactionCategory("其他", "income", "未知收入"), "其他收入");
   assert.equal(normalizeTransactionCategory("收入", "transfer", "账户互转"), "转账");
+});
+
+test("recommends categories with source and confidence without guessing", () => {
+  assert.deepEqual(recommendCategory("财付通-虎头军煎饼（鼎成中心店）", "expense"), {
+    category: "餐饮",
+    confidence: "high",
+    source: "rule",
+    merchant: "虎头军煎饼",
+  });
+  assert.deepEqual(recommendCategory("支付宝-未知商户服务", "expense"), {
+    category: "其他支出",
+    confidence: "low",
+    source: "fallback",
+    merchant: "未知商户服务",
+  });
+  assert.deepEqual(recommendCategory("茶几购买", "expense"), {
+    category: "其他支出",
+    confidence: "low",
+    source: "fallback",
+    merchant: "茶几购买",
+  });
+  assert.deepEqual(recommendCategory("书包", "expense"), {
+    category: "其他支出",
+    confidence: "low",
+    source: "fallback",
+    merchant: "书包",
+  });
+  assert.deepEqual(recommendCategory("朝朝宝转出", "income"), {
+    category: "利息",
+    confidence: "high",
+    source: "rule",
+    merchant: "朝朝宝转出",
+  });
+  assert.deepEqual(recommendCategory("账户互转", "transfer"), {
+    category: "转账",
+    confidence: "high",
+    source: "transfer",
+    merchant: "账户互转",
+  });
+});
+
+test("learns merchant category recommendations from saved user transactions", () => {
+  const history = buildMerchantCategoryHistory([
+    {
+      description: "美团-常去面馆",
+      direction: "expense",
+      category: "餐饮",
+    },
+    {
+      description: "微信支付-常去面馆",
+      direction: "expense",
+      category: "餐饮",
+    },
+    {
+      description: "支付宝-常去面馆",
+      direction: "expense",
+      category: "其他支出",
+    },
+    {
+      description: "微信支付-不稳定商户",
+      direction: "expense",
+      category: "餐饮",
+    },
+    {
+      description: "财付通-不稳定商户",
+      direction: "expense",
+      category: "餐饮",
+    },
+    {
+      description: "支付宝-不稳定商户",
+      direction: "expense",
+      category: "购物",
+    },
+    {
+      description: "账户互转",
+      direction: "expense",
+      type: "transfer",
+      category: "转账",
+    },
+  ]);
+
+  assert.deepEqual(recommendCategory("财付通-常去面馆", { type: "expense", history }), {
+    category: "餐饮",
+    confidence: "high",
+    source: "user-history",
+    merchant: "常去面馆",
+  });
+  assert.deepEqual(recommendCategory("财付通-不稳定商户", { type: "expense", history }), {
+    category: "其他支出",
+    confidence: "low",
+    source: "fallback",
+    merchant: "不稳定商户",
+  });
 });
 
 test("preserves explicit transfer rows while removing stale auto transfer tags", () => {
