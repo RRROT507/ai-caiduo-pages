@@ -272,6 +272,7 @@ test("parses China Merchants Bank credit card statement rows", () => {
   const transactions = parseCmbCreditCardStatementText(
     `招商银行信用卡对账单（个人消费卡账户 2026年03月）
 03/06 掌上生活还款 -30,435.91 6746 -30,435.91
+03/06 掌上生活还款回馈金 -3.00 6746 -3.00
 03/01 03/01 增值服务使用费-用卡安全保障 5.00 1755 5.00
 03/02 03/03 财付通-虎头军煎饼（鼎成中心店） -14.00 1755 -14.00
 02/23 02/24 朝朝宝 31.74 1755 31.74
@@ -289,6 +290,22 @@ test("parses China Merchants Bank credit card statement rows", () => {
       source,
     })),
     [
+      {
+        date: "2026-03-06",
+        description: "掌上生活还款",
+        amount: 30435.91,
+        direction: "income",
+        category: "收入",
+        source: "file",
+      },
+      {
+        date: "2026-03-06",
+        description: "掌上生活还款回馈金",
+        amount: 3,
+        direction: "income",
+        category: "收入",
+        source: "file",
+      },
       {
         date: "2026-03-01",
         description: "增值服务使用费-用卡安全保障",
@@ -334,6 +351,7 @@ CMB Credit Card Statement (2026.03)
 人民币账户 RMB A/C
 交易日 记账日 交易摘要 人民币金额 卡号末四位 交易地金额
 SOLD POSTED DESCRIPTION RMB AMOUNT CARD NO(Last 4digits) Original Tran Amount
+03/06 掌上生活还款 -30,435.91 6746 -30,435.91
 03/01 03/01 增值服务使用费-用卡安全保障 5.00 1755 5.00
 03/10 03/11 支付宝-高德打车 10.30 1755 10.30`,
     ],
@@ -346,9 +364,9 @@ SOLD POSTED DESCRIPTION RMB AMOUNT CARD NO(Last 4digits) Original Tran Amount
   assert.equal(result.mode, "local");
   assert.deepEqual(result.accountCandidate, {
     institution: "招商银行",
-    accountName: "招商银行信用卡 尾号1755",
-    accountNumberLast4: "1755",
-    accountFingerprint: "cmb-credit-card:1755",
+    accountName: "招商银行信用卡 尾号1755/6746",
+    accountNumberLast4: "1755/6746",
+    accountFingerprint: "cmb-credit-card:1755-6746",
     openingBalanceEstimate: 0,
   });
 });

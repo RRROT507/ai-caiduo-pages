@@ -6,7 +6,6 @@ const CMB_INSTITUTION = "招商银行";
 const CMB_TRANSACTION_STATEMENT_PATTERN =
   /招商银行交易流水|Transaction Statement of China Merchants Bank/u;
 const CMB_CREDIT_CARD_PATTERN = /招商银行信用卡对账单|CMB Credit Card Statement/u;
-const CMB_SKIP_PATTERN = /还款|还款反馈金/u;
 
 export async function analyzeLedgerFile(file, options = {}) {
   if (!file) {
@@ -319,7 +318,7 @@ function parseCmbTransactionLine(line, statement) {
   }
 
   const description = match[3].trim();
-  if (!description || CMB_SKIP_PATTERN.test(description)) {
+  if (!description) {
     return null;
   }
 
