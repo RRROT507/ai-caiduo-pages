@@ -1081,6 +1081,7 @@ function createTransactionRow(transaction, accountBalance = 0) {
   const isIncome = type === "income";
   const isTransfer = type === "transfer";
   const amountClass = isTransfer ? "transfer-text" : isIncome ? "income-text" : "expense-text";
+  const tagClass = isTransfer ? "transfer-tag" : isIncome ? "income-tag" : "expense-tag";
   const typeLabel = getTypeLabel(type);
   row.innerHTML = `
     <td data-label="选择" class="select-cell">
@@ -1094,12 +1095,8 @@ function createTransactionRow(transaction, accountBalance = 0) {
     <td data-label="日期">${escapeHtml(transaction.date)}</td>
     <td data-label="账户">${escapeHtml(getAccountName(transaction.accountId))}</td>
     <td data-label="说明">${escapeHtml(transaction.description)}</td>
-    <td data-label="分类"><span class="tag ${isTransfer ? "transfer-tag" : ""}">${escapeHtml(category)}</span></td>
-    <td data-label="类型">${
-      isTransfer
-        ? `<span class="type-tag transfer-tag">${escapeHtml(typeLabel)}</span>`
-        : escapeHtml(typeLabel)
-    }</td>
+    <td data-label="分类"><span class="tag ${tagClass}">${escapeHtml(category)}</span></td>
+    <td data-label="类型"><span class="type-tag ${tagClass}">${escapeHtml(typeLabel)}</span></td>
     <td data-label="金额" class="amount-cell ${amountClass}">${escapeHtml(
       formatSignedMoney(transaction.amount),
     )}</td>

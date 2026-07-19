@@ -727,9 +727,7 @@ td {
   min-width: 48px;
   justify-content: center;
   border-radius: 999px;
-  background: #eef4ea;
   padding: 4px 9px;
-  color: var(--green-dark);
   font-size: 12px;
   font-weight: 800;
 }
@@ -742,6 +740,18 @@ td {
   padding: 4px 9px;
   font-size: 12px;
   font-weight: 800;
+}
+
+.tag.income-tag,
+.type-tag.income-tag {
+  background: #eef4ea;
+  color: var(--green-dark);
+}
+
+.tag.expense-tag,
+.type-tag.expense-tag {
+  background: #f9e8e3;
+  color: var(--coral);
 }
 
 .tag.transfer-tag,

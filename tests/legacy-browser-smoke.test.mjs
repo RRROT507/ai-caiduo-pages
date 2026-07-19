@@ -510,6 +510,162 @@ test("keeps AI-imported single transfer rows after confirm and reload", async (t
   }
 });
 
+test("colors transaction record category type and amount by transaction type", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer();
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: edgePath,
+  });
+
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    await page.addInitScript(() => {
+      const RealDate = Date;
+      const frozenTime = new RealDate(2026, 6, 19, 12, 0, 0).valueOf();
+      class FrozenDate extends RealDate {
+        constructor(...args) {
+          super(...(args.length ? args : [frozenTime]));
+        }
+
+        static now() {
+          return frozenTime;
+        }
+      }
+      globalThis.Date = FrozenDate;
+    });
+
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem(
+        "ai-caiduo-accounts-v1",
+        JSON.stringify([
+          { id: "checking", name: "储蓄卡", openingBalance: 1000 },
+          { id: "credit", name: "信用卡", openingBalance: 0 },
+        ]),
+      );
+      localStorage.setItem(
+        "ai-caiduo-transactions-v1",
+        JSON.stringify([
+          {
+            id: "expense-row",
+            date: "2026-07-10",
+            description: "午餐",
+            amount: -32.5,
+            direction: "expense",
+            category: "餐饮",
+            accountId: "checking",
+            sequence: 1,
+          },
+          {
+            id: "income-row",
+            date: "2026-07-11",
+            description: "工资入账",
+            amount: 12000,
+            direction: "income",
+            category: "工资",
+            accountId: "checking",
+            sequence: 2,
+          },
+          {
+            id: "transfer-out",
+            date: "2026-07-12",
+            description: "账户互转",
+            amount: -500,
+            direction: "expense",
+            type: "transfer",
+            category: "转账",
+            accountId: "checking",
+            sequence: 3,
+          },
+          {
+            id: "transfer-in",
+            date: "2026-07-12",
+            description: "账户互转",
+            amount: 500,
+            direction: "income",
+            type: "transfer",
+            category: "转账",
+            accountId: "credit",
+            sequence: 4,
+          },
+        ]),
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+
+    const rowStyles = await page.locator("#transactionRows tr").evaluateAll((rows) => {
+      const summarize = (element) => {
+        const style = getComputedStyle(element);
+        return {
+          color: style.color,
+          background: style.backgroundColor,
+          radius: style.borderRadius,
+          text: element.textContent.trim(),
+        };
+      };
+
+      return Object.fromEntries(
+        rows.map((row) => {
+          const category = row.cells[4].querySelector(".tag");
+          const type = row.cells[5].querySelector(".type-tag");
+          const amount = row.cells[6];
+          const id = row.querySelector("[data-select-id]").dataset.selectId;
+          return [
+            id,
+            {
+              description: row.cells[3].textContent.trim(),
+              category: summarize(category),
+              type: type ? summarize(type) : null,
+              amount: summarize(amount),
+            },
+          ];
+        }),
+      );
+    });
+
+    assert.equal(rowStyles["income-row"].category.color, "rgb(19, 101, 82)");
+    assert.equal(rowStyles["income-row"].type.color, "rgb(19, 101, 82)");
+    assert.equal(rowStyles["income-row"].amount.color, "rgb(19, 101, 82)");
+    assert.equal(rowStyles["income-row"].type.text, "收入");
+    assert.notEqual(rowStyles["income-row"].type.background, "rgba(0, 0, 0, 0)");
+    assert.ok(parseFloat(rowStyles["income-row"].type.radius) > 10);
+
+    assert.equal(rowStyles["expense-row"].category.color, "rgb(215, 98, 72)");
+    assert.equal(rowStyles["expense-row"].type.color, "rgb(215, 98, 72)");
+    assert.equal(rowStyles["expense-row"].amount.color, "rgb(215, 98, 72)");
+    assert.equal(rowStyles["expense-row"].type.text, "支出");
+    assert.notEqual(rowStyles["expense-row"].type.background, "rgba(0, 0, 0, 0)");
+    assert.ok(parseFloat(rowStyles["expense-row"].type.radius) > 10);
+
+    for (const transferId of ["transfer-out", "transfer-in"]) {
+      assert.equal(rowStyles[transferId].category.color, "rgb(102, 112, 106)");
+      assert.equal(rowStyles[transferId].type.color, "rgb(102, 112, 106)");
+      assert.equal(rowStyles[transferId].amount.color, "rgb(105, 113, 109)");
+      assert.equal(rowStyles[transferId].category.text, "转账");
+      assert.equal(rowStyles[transferId].type.text, "转账");
+      assert.notEqual(rowStyles[transferId].type.background, "rgba(0, 0, 0, 0)");
+      assert.ok(parseFloat(rowStyles[transferId].type.radius) > 10);
+    }
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
 test("selects multiple transaction rows and displays generic transfer tags", async (t) => {
   if (!existsSync(edgePath)) {
     t.skip("Microsoft Edge is not available in this environment");
