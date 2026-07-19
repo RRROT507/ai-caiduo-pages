@@ -169,6 +169,23 @@ test("filters transactions by selected months and unassigned account", () => {
   assert.deepEqual(transactions, [{ date: "2026-07-01", amount: -10, category: "餐饮" }]);
 });
 
+test("filters transactions by inclusive date range and account", () => {
+  const transactions = filterLedgerTransactions(
+    [
+      { date: "2026-02-22", amount: -10, category: "餐饮", accountId: "cmb" },
+      { date: "2026-02-23", amount: 31.74, category: "收入", accountId: "cmb" },
+      { date: "2026-02-24", amount: -20, category: "交通", accountId: "cmb" },
+      { date: "2026-02-25", amount: -30, category: "购物", accountId: "wechat" },
+    ],
+    { startDate: "2026-02-23", endDate: "2026-02-24", accountIds: ["cmb"] },
+  );
+
+  assert.deepEqual(transactions, [
+    { date: "2026-02-23", amount: 31.74, category: "收入", accountId: "cmb" },
+    { date: "2026-02-24", amount: -20, category: "交通", accountId: "cmb" },
+  ]);
+});
+
 test("calculates running balances by account from opening balances", () => {
   const result = calculateRunningBalances(
     [

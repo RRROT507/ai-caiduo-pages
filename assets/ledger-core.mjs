@@ -86,7 +86,10 @@ export function summarizeSelection(transactions, filters = {}) {
 export function filterLedgerTransactions(transactions, filters = {}) {
   const months = new Set((filters.months || []).filter(Boolean));
   const accountIds = new Set((filters.accountIds || []).filter(Boolean));
-  const shouldFilterMonths = months.size > 0;
+  const startDate = isDateKey(filters.startDate) ? filters.startDate : "";
+  const endDate = isDateKey(filters.endDate) ? filters.endDate : "";
+  const shouldFilterMonths = months.size > 0 && !startDate && !endDate;
+  const shouldFilterDates = Boolean(startDate || endDate);
   const shouldFilterAccounts = accountIds.size > 0;
 
   return transactions.filter((transaction) => {
@@ -96,6 +99,7 @@ export function filterLedgerTransactions(transactions, filters = {}) {
 
     return (
       (!shouldFilterMonths || months.has(transactionMonth)) &&
+      (!shouldFilterDates || isWithinDateRange(date, startDate, endDate)) &&
       (!shouldFilterAccounts || accountIds.has(accountId))
     );
   });
@@ -162,6 +166,18 @@ export function toCsv(transactions, options = {}) {
 
 export function roundMoney(value) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+function isWithinDateRange(date, startDate, endDate) {
+  if (!isDateKey(date)) {
+    return false;
+  }
+
+  return (!startDate || date >= startDate) && (!endDate || date <= endDate);
+}
+
+function isDateKey(value) {
+  return /^\d{4}-\d{2}-\d{2}$/u.test(String(value || ""));
 }
 
 function compareTransactionsAscending(a, b) {
