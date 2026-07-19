@@ -19,6 +19,7 @@ export async function analyzeLedgerFile(file, options = {}) {
 
   const fallbackYear = Number(options.fallbackYear) || new Date().getFullYear();
   const extractedText = await extractTextFromFile(file);
+  const localResult = parseLocalStatementText(extractedText, { fallbackYear });
 
   if (options.endpoint) {
     try {
@@ -26,6 +27,7 @@ export async function analyzeLedgerFile(file, options = {}) {
       if (aiTransactions.length > 0) {
         return {
           transactions: aiTransactions,
+          accountCandidate: localResult.accountCandidate,
           mode: "ai",
           message: "AI 已生成预览",
         };
@@ -35,7 +37,6 @@ export async function analyzeLedgerFile(file, options = {}) {
     }
   }
 
-  const localResult = parseLocalStatementText(extractedText, { fallbackYear });
   const localTransactions = localResult.transactions;
 
   if (localTransactions.length > 0) {

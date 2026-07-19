@@ -122,6 +122,44 @@ test("normalizes transactions returned by an AI import endpoint", async () => {
   }
 });
 
+test("keeps local account candidate when AI endpoint returns transactions", async () => {
+  const endpoint = await startJsonEndpoint({
+    transactions: [
+      {
+        date: "2026-02-23",
+        description: "AI parsed row",
+        amount: "31.74",
+        direction: "income",
+      },
+    ],
+  });
+  const file = new File(
+    [
+      `Transaction Statement of China Merchants Bank
+Account No: 214850121113598
+Transaction Date Currency Amount Balance Description
+2026-02-23 CNY 31.74 4,000.00 ChaChaBao transfer out`,
+    ],
+    "cmb-transaction-statement.txt",
+    { type: "text/plain" },
+  );
+
+  try {
+    const result = await analyzeLedgerFile(file, {
+      endpoint: endpoint.url,
+      fallbackYear: 2026,
+    });
+
+    assert.equal(result.mode, "ai");
+    assert.equal(result.transactions.length, 1);
+    assert.equal(result.accountCandidate.accountFingerprint, "cmb:3598");
+    assert.equal(result.accountCandidate.accountNumberLast4, "3598");
+    assert.equal(result.accountCandidate.openingBalanceEstimate, 3968.26);
+  } finally {
+    await endpoint.close();
+  }
+});
+
 test("does not parse binary pdf internals as transactions", async () => {
   const file = new File(
     [

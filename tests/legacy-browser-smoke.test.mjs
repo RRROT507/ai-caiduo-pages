@@ -243,6 +243,61 @@ Transaction Statement of China Merchants Bank
   }
 });
 
+test("initializes the date range from the local calendar date", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer();
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: edgePath,
+  });
+
+  try {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 900 },
+      timezoneId: "Asia/Shanghai",
+    });
+    const page = await context.newPage();
+    await page.addInitScript(() => {
+      const RealDate = Date;
+      const frozenTime = new RealDate("2026-08-31T18:00:00.000Z").valueOf();
+      class FrozenDate extends RealDate {
+        constructor(...args) {
+          super(...(args.length ? args : [frozenTime]));
+        }
+
+        static now() {
+          return frozenTime;
+        }
+      }
+      globalThis.Date = FrozenDate;
+    });
+
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: "domcontentloaded" });
+
+    assert.equal(await page.locator("#dateInput").inputValue(), "2026-09-01");
+    assert.equal(await page.locator("#dateRangeLabel").textContent(), "2026-09-01");
+    await page.click("#dateRangeButton");
+    assert.equal(await page.locator("#calendarMonthLabel").textContent(), "2026年9月");
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
 function startStaticServer() {
   const server = createServer(async (request, response) => {
     try {
