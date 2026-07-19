@@ -130,6 +130,15 @@ function bindEvents() {
     render();
   });
 
+  elements.importAccountInput.addEventListener("change", () => {
+    if (
+      state.pendingAccountMode === "new" &&
+      elements.importAccountInput.value !== UNASSIGNED_ACCOUNT_ID
+    ) {
+      elements.addDetectedAccountInput.checked = false;
+    }
+  });
+
   elements.directionInput.addEventListener("change", () => {
     const direction = elements.directionInput.value;
     if (direction === "income") {
@@ -304,6 +313,7 @@ async function importSelectedFile() {
     if (accountResolution.mode === "matched") {
       elements.importAccountInput.value = accountResolution.accountId;
     } else if (accountResolution.mode === "new") {
+      elements.importAccountInput.value = UNASSIGNED_ACCOUNT_ID;
       elements.addDetectedAccountInput.checked = true;
     }
     renderPendingImport();
@@ -324,12 +334,14 @@ function confirmPendingImport() {
     return;
   }
 
-  let importAccountId = normalizeAccountId(elements.importAccountInput.value);
+  const selectedImportAccountId = elements.importAccountInput.value || UNASSIGNED_ACCOUNT_ID;
+  let importAccountId = normalizeAccountId(selectedImportAccountId);
 
   if (
     state.pendingAccountMode === "new" &&
     state.pendingAccountCandidate &&
-    elements.addDetectedAccountInput.checked
+    elements.addDetectedAccountInput.checked &&
+    selectedImportAccountId === UNASSIGNED_ACCOUNT_ID
   ) {
     const createdAccount = createAccountFromCandidate(state.pendingAccountCandidate);
     importAccountId = createdAccount.id;

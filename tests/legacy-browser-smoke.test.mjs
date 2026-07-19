@@ -237,6 +237,32 @@ Transaction Statement of China Merchants Bank
     assert.match(alipayRows.join("\n"), /手动改选账户/u);
     assert.match(alipayRows.join("\n"), /支付宝/u);
     assert.match(alipayRows.join("\n"), /高德打车/u);
+
+    await page.setInputFiles("#fileInput", {
+      name: "cmb-new-account-manual-override.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(`Transaction Statement of China Merchants Bank
+Account No: 214850121117777
+Transaction Date Currency Amount Balance Description
+2026-07-07 CNY 25.00 125.00 Manual new-account override`),
+    });
+    await page.click("#importButton");
+    await page.waitForTimeout(300);
+    assert.match(await page.locator("#detectedAccountPanel").textContent(), /7777/u);
+    assert.ok(await page.locator("#addDetectedAccountInput").isChecked());
+    await page.selectOption("#importAccountInput", "alipay");
+    assert.equal(await page.locator("#addDetectedAccountInput").isChecked(), false);
+    await page.click("#confirmImportButton");
+    await page.waitForTimeout(300);
+
+    assert.equal(
+      await page.locator("#accountList input[value='招商银行 尾号7777']").count(),
+      0,
+    );
+    await page.selectOption("#accountFilterInput", "alipay");
+    const manuallyOverriddenNewAccountRows = await page.locator("#transactionRows tr").allTextContents();
+    assert.equal(manuallyOverriddenNewAccountRows.length, 3);
+    assert.match(manuallyOverriddenNewAccountRows.join("\n"), /Manual new-account override/u);
   } finally {
     await browser.close();
     await server.close();
