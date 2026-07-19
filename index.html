@@ -40,14 +40,27 @@
         </div>
 
         <div class="dashboard-filters" aria-label="看板筛选">
-          <label class="month-control">
-            <span>开始月份</span>
-            <input id="startMonthInput" type="month" />
-          </label>
-          <label class="month-control">
-            <span>结束月份</span>
-            <input id="endMonthInput" type="month" />
-          </label>
+          <div class="date-range-control">
+            <span>周期</span>
+            <button id="dateRangeButton" class="date-range-button" type="button" aria-expanded="false">
+              <span id="dateRangeLabel">选择周期</span>
+            </button>
+            <div id="dateRangePanel" class="date-range-panel is-hidden">
+              <div class="calendar-toolbar">
+                <button id="prevCalendarMonthButton" class="icon-button" type="button" aria-label="上个月">
+                  &lsaquo;
+                </button>
+                <strong id="calendarMonthLabel"></strong>
+                <button id="nextCalendarMonthButton" class="icon-button" type="button" aria-label="下个月">
+                  &rsaquo;
+                </button>
+              </div>
+              <div class="calendar-weekdays" aria-hidden="true">
+                <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+              </div>
+              <div id="calendarDays" class="calendar-days"></div>
+            </div>
+          </div>
           <label class="account-filter-control">
             <span>账户</span>
             <select id="accountFilterInput" aria-label="筛选账户"></select>

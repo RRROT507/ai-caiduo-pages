@@ -29,15 +29,23 @@ const state = {
   pendingAccountMode: "manual",
   pendingMatchedAccountId: "",
   selectedFile: null,
-  startMonth: getCurrentMonth(),
-  endMonth: getCurrentMonth(),
+  startDate: getCurrentMonthStartDate(),
+  endDate: getToday(),
+  datePickerOpen: false,
+  dateRangeDraftStart: "",
+  visibleCalendarMonth: getCurrentMonth(),
   selectedAccountId: "all",
   categoryFilter: "all",
 };
 
 const elements = {
-  startMonthInput: document.querySelector("#startMonthInput"),
-  endMonthInput: document.querySelector("#endMonthInput"),
+  dateRangeButton: document.querySelector("#dateRangeButton"),
+  dateRangeLabel: document.querySelector("#dateRangeLabel"),
+  dateRangePanel: document.querySelector("#dateRangePanel"),
+  calendarMonthLabel: document.querySelector("#calendarMonthLabel"),
+  calendarDays: document.querySelector("#calendarDays"),
+  prevCalendarMonthButton: document.querySelector("#prevCalendarMonthButton"),
+  nextCalendarMonthButton: document.querySelector("#nextCalendarMonthButton"),
   accountFilterInput: document.querySelector("#accountFilterInput"),
   incomeTotal: document.querySelector("#incomeTotal"),
   expenseTotal: document.querySelector("#expenseTotal"),
@@ -82,8 +90,6 @@ const elements = {
 init();
 
 function init() {
-  elements.startMonthInput.value = state.startMonth;
-  elements.endMonthInput.value = state.endMonth;
   elements.dateInput.value = getToday();
   renderCategoryOptions();
   renderAccountOptions();
@@ -93,12 +99,29 @@ function init() {
 }
 
 function bindEvents() {
-  elements.startMonthInput.addEventListener("change", () => {
-    setMonthRange(elements.startMonthInput.value, state.endMonth);
+  elements.dateRangeButton.addEventListener("click", () => {
+    state.datePickerOpen = !state.datePickerOpen;
+    state.visibleCalendarMonth = state.startDate.slice(0, 7) || getCurrentMonth();
+    renderDateRangeFilter();
   });
 
-  elements.endMonthInput.addEventListener("change", () => {
-    setMonthRange(state.startMonth, elements.endMonthInput.value);
+  elements.prevCalendarMonthButton.addEventListener("click", () => {
+    state.visibleCalendarMonth = getPreviousMonth(state.visibleCalendarMonth);
+    renderDateRangeFilter();
+  });
+
+  elements.nextCalendarMonthButton.addEventListener("click", () => {
+    state.visibleCalendarMonth = getNextMonth(state.visibleCalendarMonth);
+    renderDateRangeFilter();
+  });
+
+  elements.calendarDays.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-date-value]");
+    if (!button) {
+      return;
+    }
+
+    selectDateRangeBoundary(button.dataset.dateValue);
   });
 
   elements.accountFilterInput.addEventListener("change", () => {
@@ -257,7 +280,7 @@ async function importSelectedFile() {
   try {
     const result = await analyzeLedgerFile(state.selectedFile, {
       endpoint: getAiImportEndpoint(),
-      fallbackYear: Number(state.startMonth.slice(0, 4)),
+      fallbackYear: Number(state.startDate.slice(0, 4)),
     });
 
     if (result.transactions.length === 0) {
@@ -351,12 +374,12 @@ function exportTransactions() {
   }
 
   const csv = toCsv(transactions, { accountNameById: getAccountNameById() });
-  const monthSuffix = getMonthRangeLabel();
+  const dateRangeSuffix = getDateRangeFileLabel();
   const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `AI财舵-${monthSuffix}.csv`;
+  link.download = `AI财舵-${dateRangeSuffix}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -381,10 +404,20 @@ function deleteTransaction(id) {
   render();
 }
 
-function setMonthRange(startMonth, endMonth) {
-  const [normalizedStart, normalizedEnd] = normalizeMonthRange(startMonth, endMonth);
-  state.startMonth = normalizedStart;
-  state.endMonth = normalizedEnd;
+function selectDateRangeBoundary(dateValue) {
+  if (!state.dateRangeDraftStart) {
+    state.dateRangeDraftStart = dateValue;
+    state.startDate = dateValue;
+    state.endDate = dateValue;
+    render();
+    return;
+  }
+
+  const [startDate, endDate] = normalizeDateRange(state.dateRangeDraftStart, dateValue);
+  state.startDate = startDate;
+  state.endDate = endDate;
+  state.dateRangeDraftStart = "";
+  state.datePickerOpen = false;
   render();
 }
 
@@ -463,6 +496,7 @@ function deleteAccount(id) {
 }
 
 function render() {
+  renderDateRangeFilter();
   renderDashboardFilters();
   renderSummary();
   renderAccountOptions();
@@ -472,9 +506,61 @@ function render() {
   renderPendingImport();
 }
 
+function renderDateRangeFilter() {
+  const [startDate, endDate] = normalizeDateRange(state.startDate, state.endDate);
+  state.startDate = startDate;
+  state.endDate = endDate;
+  elements.dateRangeLabel.textContent = getDateRangeLabel();
+  elements.dateRangeButton.setAttribute("aria-expanded", String(state.datePickerOpen));
+  elements.dateRangePanel.classList.toggle("is-hidden", !state.datePickerOpen);
+  elements.calendarMonthLabel.textContent = `${state.visibleCalendarMonth.slice(0, 4)}年${Number(
+    state.visibleCalendarMonth.slice(5, 7),
+  )}月`;
+
+  replaceChildrenCompat(
+    elements.calendarDays,
+    ...getCalendarDayItems(state.visibleCalendarMonth).map(createCalendarDayButton),
+  );
+}
+
+function getCalendarDayItems(monthKey) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const first = new Date(Date.UTC(year, month - 1, 1));
+  const firstWeekday = (first.getUTCDay() + 6) % 7;
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const items = [];
+
+  for (let index = 0; index < firstWeekday; index += 1) {
+    items.push(null);
+  }
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    items.push(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
+  }
+  return items;
+}
+
+function createCalendarDayButton(dateValue) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "calendar-day";
+  if (!dateValue) {
+    button.disabled = true;
+    button.setAttribute("aria-hidden", "true");
+    return button;
+  }
+
+  const inRange = dateValue >= state.startDate && dateValue <= state.endDate;
+  button.dataset.dateValue = dateValue;
+  button.textContent = String(Number(dateValue.slice(8, 10)));
+  button.classList.toggle("is-selected", dateValue === state.startDate || dateValue === state.endDate);
+  button.classList.toggle("is-in-range", inRange);
+  return button;
+}
+
 function renderSummary() {
   const summary = summarizeSelection(state.transactions, {
-    months: getSelectedMonths(),
+    startDate: state.startDate,
+    endDate: state.endDate,
     accountIds: getSelectedAccountIds(),
   });
   elements.incomeTotal.textContent = formatMoney(summary.income);
@@ -498,7 +584,8 @@ function renderCategoryFilter() {
     "all",
     ...new Set(
       filterLedgerTransactions(state.transactions, {
-        months: getSelectedMonths(),
+        startDate: state.startDate,
+        endDate: state.endDate,
         accountIds: getSelectedAccountIds(),
       }).map((transaction) => transaction.category),
     ),
@@ -637,12 +724,6 @@ function renderAccountList() {
 }
 
 function renderDashboardFilters() {
-  const [startMonth, endMonth] = normalizeMonthRange(state.startMonth, state.endMonth);
-  state.startMonth = startMonth;
-  state.endMonth = endMonth;
-  elements.startMonthInput.value = startMonth;
-  elements.endMonthInput.value = endMonth;
-
   const accountOptions = [
     createOption("all", "全部账户"),
     createOption(UNASSIGNED_ACCOUNT_ID, UNASSIGNED_ACCOUNT_NAME),
@@ -696,33 +777,40 @@ function getRunningBalanceSnapshot() {
   });
 }
 
-function getSelectedMonths() {
-  const [startMonth, endMonth] = normalizeMonthRange(state.startMonth, state.endMonth);
-  const months = [];
-  let cursor = startMonth;
-
-  while (cursor <= endMonth) {
-    months.push(cursor);
-    cursor = getNextMonth(cursor);
-  }
-
-  return months;
-}
-
 function getSelectedAccountIds() {
   return state.selectedAccountId === "all" ? [] : [state.selectedAccountId];
 }
 
-function getMonthRangeLabel() {
-  const [startMonth, endMonth] = normalizeMonthRange(state.startMonth, state.endMonth);
-  return startMonth === endMonth ? startMonth : `${startMonth}_${endMonth}`;
+function getDateRangeFileLabel() {
+  return state.startDate === state.endDate ? state.startDate : `${state.startDate}_${state.endDate}`;
 }
 
-function normalizeMonthRange(startMonth, endMonth) {
-  const currentMonth = getCurrentMonth();
-  const safeStart = isMonthKey(startMonth) ? startMonth : currentMonth;
-  const safeEnd = isMonthKey(endMonth) ? endMonth : currentMonth;
+function getDateRangeLabel() {
+  return state.startDate === state.endDate
+    ? state.startDate
+    : `${state.startDate} 至 ${state.endDate}`;
+}
+
+function normalizeDateRange(startDate, endDate) {
+  const today = getToday();
+  const safeStart = isDateKey(startDate) ? startDate : getCurrentMonthStartDate();
+  const safeEnd = isDateKey(endDate) ? endDate : today;
   return safeStart <= safeEnd ? [safeStart, safeEnd] : [safeEnd, safeStart];
+}
+
+function isDateKey(value) {
+  return /^\d{4}-\d{2}-\d{2}$/u.test(String(value || ""));
+}
+
+function getCurrentMonthStartDate() {
+  return `${getCurrentMonth()}-01`;
+}
+
+function getPreviousMonth(monthKey) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const previousMonth = month === 1 ? 12 : month - 1;
+  const previousYear = month === 1 ? year - 1 : year;
+  return `${previousYear}-${String(previousMonth).padStart(2, "0")}`;
 }
 
 function getNextMonth(monthKey) {
@@ -730,10 +818,6 @@ function getNextMonth(monthKey) {
   const nextMonth = month === 12 ? 1 : month + 1;
   const nextYear = month === 12 ? year + 1 : year;
   return `${nextYear}-${String(nextMonth).padStart(2, "0")}`;
-}
-
-function isMonthKey(value) {
-  return /^\d{4}-\d{2}$/u.test(String(value || ""));
 }
 
 function createCategoryBar(item, maxAmount) {
@@ -812,7 +896,8 @@ function createPendingRow(transaction) {
 
 function getVisibleTransactions() {
   return filterLedgerTransactions(state.transactions, {
-    months: getSelectedMonths(),
+    startDate: state.startDate,
+    endDate: state.endDate,
     accountIds: getSelectedAccountIds(),
   })
     .filter(

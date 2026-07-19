@@ -192,7 +192,7 @@ a:hover {
   font-size: 16px;
 }
 
-.month-control,
+.date-range-control,
 label {
   display: grid;
   gap: 7px;
@@ -273,6 +273,80 @@ textarea {
 
 .import-account-control {
   margin-top: 12px;
+}
+
+.date-range-control {
+  position: relative;
+  gap: 6px;
+}
+
+.date-range-button {
+  height: 42px;
+  border: 1px solid #c9d8d2;
+  border-radius: 8px;
+  background: #fff;
+  color: #173f35;
+  padding: 0 12px;
+  text-align: left;
+}
+
+.date-range-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: min(320px, 88vw);
+  padding: 12px;
+  border: 1px solid #c9d8d2;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 18px 40px rgba(24, 57, 47, 0.14);
+}
+
+.calendar-toolbar,
+.calendar-weekdays,
+.calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.calendar-toolbar {
+  grid-template-columns: 36px 1fr 36px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.calendar-toolbar strong {
+  text-align: center;
+}
+
+.calendar-weekdays {
+  color: #697c76;
+  font-size: 0.78rem;
+  margin-bottom: 4px;
+  text-align: center;
+}
+
+.calendar-day {
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 6px;
+  background: #f4f7f6;
+  color: #173f35;
+}
+
+.calendar-day:disabled {
+  background: transparent;
+}
+
+.calendar-day.is-in-range {
+  background: #dff1eb;
+}
+
+.calendar-day.is-selected {
+  background: #1f8a70;
+  color: #fff;
 }
 
 .detected-account-panel {

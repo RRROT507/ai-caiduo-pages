@@ -69,10 +69,9 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
 
     assert.equal(await page.locator("#monthFilterList").count(), 0);
     assert.equal(await page.locator("#accountFilterList").count(), 0);
-    await page.fill("#startMonthInput", "2026-07");
-    await page.fill("#endMonthInput", "2026-07");
-    await page.dispatchEvent("#startMonthInput", "change");
-    await page.dispatchEvent("#endMonthInput", "change");
+    await page.click("#dateRangeButton");
+    await page.click('[data-date-value="2026-07-02"]');
+    await page.click('[data-date-value="2026-07-02"]');
     await page.selectOption("#accountFilterInput", "all");
 
     const savingsAccountValue = await page
@@ -108,8 +107,10 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
     await page.fill("#descriptionInput", "工资入账");
     await page.click("#entryForm button[type=submit]");
 
-    await page.fill("#endMonthInput", "2026-08");
-    await page.dispatchEvent("#endMonthInput", "change");
+    await page.click("#dateRangeButton");
+    await page.click('[data-date-value="2026-07-02"]');
+    await page.click("#nextCalendarMonthButton");
+    await page.click('[data-date-value="2026-08-03"]');
     assert.equal(await page.locator("#transactionRows tr").count(), 3);
     assert.equal(await page.locator("#transactionCount").textContent(), "3");
 
