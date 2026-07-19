@@ -42,6 +42,19 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
     });
     await page.addInitScript(() => {
       delete Element.prototype.replaceChildren;
+
+      const RealDate = Date;
+      const frozenTime = new RealDate("2026-07-19T12:00:00.000Z").valueOf();
+      class FrozenDate extends RealDate {
+        constructor(...args) {
+          super(...(args.length ? args : [frozenTime]));
+        }
+
+        static now() {
+          return frozenTime;
+        }
+      }
+      globalThis.Date = FrozenDate;
     });
 
     await page.goto(server.url, { waitUntil: "domcontentloaded" });
@@ -113,6 +126,24 @@ test("uploads a statement file and confirms recognized transactions", async (t) 
     await page.click('[data-date-value="2026-08-03"]');
     assert.equal(await page.locator("#transactionRows tr").count(), 3);
     assert.equal(await page.locator("#transactionCount").textContent(), "3");
+
+    const committedRangeLabel = await page.locator("#dateRangeLabel").textContent();
+    await page.click("#dateRangeButton");
+    await page.click("#nextCalendarMonthButton");
+    await page.click('[data-date-value="2026-08-03"]');
+    assert.equal(await page.locator("#dateRangeLabel").textContent(), committedRangeLabel);
+    assert.equal(await page.locator("#transactionCount").textContent(), "3");
+    assert.equal(await page.locator("#dateRangePanel").getAttribute("class"), "date-range-panel");
+
+    await page.click("#dateRangeButton");
+    await page.click("#dateRangeButton");
+    await page.click('[data-date-value="2026-07-02"]');
+    assert.equal(await page.locator("#dateRangeLabel").textContent(), committedRangeLabel);
+    assert.equal(await page.locator("#transactionCount").textContent(), "3");
+    assert.equal(await page.locator("#dateRangePanel").getAttribute("class"), "date-range-panel");
+    await page.click("#nextCalendarMonthButton");
+    await page.click('[data-date-value="2026-08-03"]');
+    assert.equal(await page.locator("#dateRangePanel").getAttribute("class"), "date-range-panel is-hidden");
 
     await page.selectOption("#accountFilterInput", "wechat");
     assert.equal(await page.locator("#transactionRows tr").count(), 1);

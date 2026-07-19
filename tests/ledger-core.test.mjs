@@ -186,6 +186,35 @@ test("filters transactions by inclusive date range and account", () => {
   ]);
 });
 
+test("rejects impossible dates when filtering by date range", () => {
+  const transactions = filterLedgerTransactions(
+    [
+      { date: "2026-02-28", amount: -10, category: "餐饮", accountId: "cmb" },
+      { date: "2026-02-00", amount: -15, category: "餐饮", accountId: "cmb" },
+      { date: "2026-02-31", amount: -20, category: "餐饮", accountId: "cmb" },
+      { date: "2026-13-01", amount: -30, category: "餐饮", accountId: "cmb" },
+    ],
+    { startDate: "2026-02-01", endDate: "2026-02-28", accountIds: ["cmb"] },
+  );
+
+  assert.deepEqual(transactions, [
+    { date: "2026-02-28", amount: -10, category: "餐饮", accountId: "cmb" },
+  ]);
+});
+
+test("does not parse impossible calendar dates", () => {
+  const transactions = parseLedgerText(
+    `
+    2026-02-31 无效日期 -10.00
+    2026-13-01 无效月份 -20.00
+    2026-02-28 有效日期 -30.00
+    `,
+    { fallbackYear: 2026 },
+  );
+
+  assert.deepEqual(transactions.map((transaction) => transaction.date), ["2026-02-28"]);
+});
+
 test("calculates running balances by account from opening balances", () => {
   const result = calculateRunningBalances(
     [

@@ -101,6 +101,7 @@ function init() {
 function bindEvents() {
   elements.dateRangeButton.addEventListener("click", () => {
     state.datePickerOpen = !state.datePickerOpen;
+    state.dateRangeDraftStart = "";
     state.visibleCalendarMonth = state.startDate.slice(0, 7) || getCurrentMonth();
     renderDateRangeFilter();
   });
@@ -407,9 +408,7 @@ function deleteTransaction(id) {
 function selectDateRangeBoundary(dateValue) {
   if (!state.dateRangeDraftStart) {
     state.dateRangeDraftStart = dateValue;
-    state.startDate = dateValue;
-    state.endDate = dateValue;
-    render();
+    renderDateRangeFilter();
     return;
   }
 
@@ -549,10 +548,17 @@ function createCalendarDayButton(dateValue) {
     return button;
   }
 
-  const inRange = dateValue >= state.startDate && dateValue <= state.endDate;
+  const hasDraftRangeStart = Boolean(state.dateRangeDraftStart);
+  const inRange =
+    !hasDraftRangeStart && dateValue >= state.startDate && dateValue <= state.endDate;
   button.dataset.dateValue = dateValue;
   button.textContent = String(Number(dateValue.slice(8, 10)));
-  button.classList.toggle("is-selected", dateValue === state.startDate || dateValue === state.endDate);
+  button.classList.toggle(
+    "is-selected",
+    hasDraftRangeStart
+      ? dateValue === state.dateRangeDraftStart
+      : dateValue === state.startDate || dateValue === state.endDate,
+  );
   button.classList.toggle("is-in-range", inRange);
   return button;
 }
@@ -799,7 +805,20 @@ function normalizeDateRange(startDate, endDate) {
 }
 
 function isDateKey(value) {
-  return /^\d{4}-\d{2}-\d{2}$/u.test(String(value || ""));
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/u);
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
 }
 
 function getCurrentMonthStartDate() {
