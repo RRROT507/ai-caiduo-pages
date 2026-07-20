@@ -10,6 +10,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const rootDir = fileURLToPath(new URL("../", import.meta.url));
 const edgePath = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
+let nextStaticServerPort = 43100;
 
 test("uploads a statement file and confirms recognized transactions", async (t) => {
   if (!existsSync(edgePath)) {
@@ -1007,6 +1008,14 @@ test("selects multiple transaction rows and displays generic transfer tags", asy
     assert.equal(await page.locator(".tag.transfer-tag").count(), 2);
     assert.equal(await page.locator("#incomeTotal").textContent(), "¥0.00");
     assert.equal(await page.locator("#expenseTotal").textContent(), "¥20.00");
+    assert.equal(
+      await page.locator("#incomeTotal").evaluate((element) => getComputedStyle(element).color),
+      "rgb(215, 98, 72)",
+    );
+    assert.equal(
+      await page.locator("#expenseTotal").evaluate((element) => getComputedStyle(element).color),
+      "rgb(19, 101, 82)",
+    );
 
     await page.check('[data-select-id="savings-payment"]');
     await page.check('[data-select-id="credit-repayment"]');
@@ -1166,17 +1175,40 @@ function startStaticServer(options = {}) {
     }
   });
 
-  return new Promise((resolve) => {
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      resolve({
-        url: `http://127.0.0.1:${address.port}/`,
-        close: () =>
-          new Promise((closeResolve, closeReject) => {
-            server.close((error) => (error ? closeReject(error) : closeResolve()));
-          }),
-      });
-    });
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    const listen = () => {
+      if (attempts >= 2000) {
+        reject(new Error("Unable to find an available browser-safe test port"));
+        return;
+      }
+      attempts += 1;
+      const port = nextStaticServerPort;
+      nextStaticServerPort = nextStaticServerPort >= 45100 ? 43100 : nextStaticServerPort + 1;
+      const onError = (error) => {
+        server.off("listening", onListening);
+        if (error.code === "EADDRINUSE" || error.code === "EACCES") {
+          listen();
+          return;
+        }
+        reject(error);
+      };
+      const onListening = () => {
+        server.off("error", onError);
+        const address = server.address();
+        resolve({
+          url: `http://127.0.0.1:${address.port}/`,
+          close: () =>
+            new Promise((closeResolve, closeReject) => {
+              server.close((error) => (error ? closeReject(error) : closeResolve()));
+            }),
+        });
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(port, "127.0.0.1");
+    };
+    listen();
   });
 }
 

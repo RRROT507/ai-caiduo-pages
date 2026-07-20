@@ -426,11 +426,11 @@ textarea {
 }
 
 .metric-income strong {
-  color: var(--green-dark);
+  color: var(--coral);
 }
 
 .metric-expense strong {
-  color: var(--coral);
+  color: var(--green-dark);
 }
 
 .metric-balance strong {
