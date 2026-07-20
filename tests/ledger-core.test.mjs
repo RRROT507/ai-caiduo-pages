@@ -64,6 +64,14 @@ test("recommends categories with source and confidence without guessing", () => 
     source: "rule",
     merchant: "虎头军煎饼",
   });
+  assert.deepEqual(recommendCategory("财付通-PIZZAHUT", "expense"), {
+    category: "餐饮",
+    confidence: "high",
+    source: "rule",
+    merchant: "PIZZAHUT",
+  });
+  assert.equal(recommendCategory("KFC", "expense").category, "餐饮");
+  assert.equal(recommendCategory("麦当劳", "expense").category, "餐饮");
   assert.deepEqual(recommendCategory("支付宝-未知商户服务", "expense"), {
     category: "其他支出",
     confidence: "low",

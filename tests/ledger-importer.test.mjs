@@ -15,7 +15,8 @@ test("analyzes a local statement text file with fallback parsing", async () => {
 2026/07/03 工资入账 12000.00 收入
 07-04 滴滴出行 支出 48.20
 2026-07-05 财付通-虎头军煎饼（鼎成中心店） -18.00
-2026-07-06 支付宝-未知商户服务 -20.00`,
+2026-07-06 支付宝-未知商户服务 -20.00
+2026-03-03 财付通-PIZZAHUT -37.00`,
     ],
     "cmb-statement.txt",
     { type: "text/plain" },
@@ -73,6 +74,14 @@ test("analyzes a local statement text file with fallback parsing", async () => {
         amount: -20,
         direction: "expense",
         category: "其他支出",
+        source: "file",
+      },
+      {
+        date: "2026-03-03",
+        description: "财付通-PIZZAHUT",
+        amount: -37,
+        direction: "expense",
+        category: "餐饮",
         source: "file",
       },
     ],
