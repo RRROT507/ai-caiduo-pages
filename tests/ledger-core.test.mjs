@@ -78,6 +78,9 @@ test("recommends categories with source and confidence without guessing", () => 
   assert.equal(recommendCategory("Pizza Hut", "expense").category, "餐饮");
   assert.equal(recommendCategory("kfc", "expense").category, "餐饮");
   assert.equal(recommendCategory("麦当劳", "expense").category, "餐饮");
+  assert.equal(recommendCategory("财付通-喜家德北京鼎成时代", "expense").category, "餐饮");
+  assert.equal(recommendCategory("财付通-果蔬好", "expense").category, "购物");
+  assert.equal(recommendCategory("财付通-停简单平台商户", "expense").category, "交通");
   assert.deepEqual(recommendCategory("支付宝-未知商户服务", "expense"), {
     category: "其他支出",
     confidence: "low",
@@ -95,6 +98,12 @@ test("recommends categories with source and confidence without guessing", () => 
     confidence: "low",
     source: "fallback",
     merchant: "书包",
+  });
+  assert.deepEqual(recommendCategory("平台商户", "expense"), {
+    category: "其他支出",
+    confidence: "low",
+    source: "fallback",
+    merchant: "平台商户",
   });
   assert.deepEqual(recommendCategory("朝朝宝转出", "income"), {
     category: "利息",
