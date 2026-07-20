@@ -8,6 +8,7 @@ import {
   compareLedgerTransactionsDescending,
   filterLedgerTransactions,
   getCategoriesForType,
+  getTransactionType,
   getTransactionTypes,
   inferCategory,
   normalizeTransactionCategory,
@@ -40,6 +41,7 @@ test("provides scenario-specific category options for each transaction type", ()
     "其他收入",
   ]);
   assert.deepEqual(getCategoriesForType("transfer"), ["转账"]);
+  assert.deepEqual(getCategoriesForType("refunded"), ["已退款"]);
 });
 
 test("provides ordered transaction type options", () => {
@@ -47,6 +49,7 @@ test("provides ordered transaction type options", () => {
     { value: "expense", label: "支出" },
     { value: "income", label: "收入" },
     { value: "transfer", label: "转账" },
+    { value: "refunded", label: "已退款" },
   ]);
 });
 
@@ -55,6 +58,7 @@ test("normalizes categories so they match the transaction type", () => {
   assert.equal(normalizeTransactionCategory("餐饮", "income", "工资入账"), "工资");
   assert.equal(normalizeTransactionCategory("其他", "income", "未知收入"), "其他收入");
   assert.equal(normalizeTransactionCategory("收入", "transfer", "账户互转"), "转账");
+  assert.equal(normalizeTransactionCategory("餐饮", "refunded", "退款配对"), "已退款");
 });
 
 test("recommends categories with source and confidence without guessing", () => {
@@ -442,6 +446,67 @@ test("tags same-day equal opposite account movements as transfers and excludes t
   assert.equal(summary.balance, 980);
   assert.equal(summary.count, 4);
   assert.deepEqual(summary.categoryTotals, [{ category: "餐饮", amount: 20 }]);
+});
+
+test("tags same-day same-account opposite merchant rows as refunded and excludes them from cash flow totals", () => {
+  const transactions = tagTransferTransactions([
+    {
+      id: "hutoujun-refund",
+      date: "2026-03-02",
+      description: "财付通-虎头军煎饼（鼎成中心店）",
+      amount: 14,
+      direction: "income",
+      category: "退款",
+      accountId: "cmb-savings-3598",
+      sequence: 1,
+    },
+    {
+      id: "hutoujun-payment",
+      date: "2026-03-02",
+      description: "财付通-虎头军煎饼（鼎成中心店）",
+      amount: -14,
+      direction: "expense",
+      category: "餐饮",
+      accountId: "cmb-savings-3598",
+      sequence: 2,
+    },
+    {
+      id: "salary",
+      date: "2026-03-02",
+      description: "工资",
+      amount: 1000,
+      direction: "income",
+      category: "工资",
+      accountId: "cmb-savings-3598",
+      sequence: 3,
+    },
+    {
+      id: "pizza",
+      date: "2026-03-03",
+      description: "财付通-PIZZAHUT",
+      amount: -37,
+      direction: "expense",
+      category: "餐饮",
+      accountId: "cmb-savings-3598",
+      sequence: 4,
+    },
+  ]);
+
+  assert.equal(getTransactionType(transactions.find((transaction) => transaction.id === "hutoujun-refund")), "refunded");
+  assert.equal(getTransactionType(transactions.find((transaction) => transaction.id === "hutoujun-payment")), "refunded");
+  assert.equal(transactions.find((transaction) => transaction.id === "hutoujun-refund").category, "已退款");
+  assert.equal(transactions.find((transaction) => transaction.id === "hutoujun-payment").category, "已退款");
+
+  const summary = summarizeSelection(transactions, {
+    startDate: "2026-03-02",
+    endDate: "2026-03-03",
+  });
+
+  assert.equal(summary.income, 1000);
+  assert.equal(summary.expense, 37);
+  assert.equal(summary.balance, 963);
+  assert.equal(summary.count, 4);
+  assert.deepEqual(summary.categoryTotals, [{ category: "餐饮", amount: 37 }]);
 });
 
 test("removes stale transfer tags when the matching opposite transaction is gone", () => {

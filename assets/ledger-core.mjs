@@ -1,17 +1,20 @@
 const EXPENSE_CATEGORIES = ["餐饮", "交通", "购物", "居家", "医疗", "娱乐", "学习", "其他支出"];
 const INCOME_CATEGORIES = ["工资", "奖金", "报销", "退款", "利息", "投资收益", "其他收入"];
 const TRANSFER_CATEGORIES = ["转账"];
+const REFUNDED_CATEGORIES = ["已退款"];
 
 const CATEGORY_OPTIONS_BY_TYPE = {
   expense: EXPENSE_CATEGORIES,
   income: INCOME_CATEGORIES,
   transfer: TRANSFER_CATEGORIES,
+  refunded: REFUNDED_CATEGORIES,
 };
 
 const TRANSACTION_TYPES = [
   { value: "expense", label: "支出" },
   { value: "income", label: "收入" },
   { value: "transfer", label: "转账" },
+  { value: "refunded", label: "已退款" },
 ];
 
 const EXPENSE_CATEGORY_RULES = [
@@ -61,6 +64,14 @@ export function recommendCategory(description, typeOrOptions = "expense") {
       merchant,
     };
   }
+  if (type === "refunded") {
+    return {
+      category: "已退款",
+      confidence: "high",
+      source: "refunded",
+      merchant,
+    };
+  }
 
   const historyRecommendation = findHistoryRecommendation(options.history, merchant, type);
   if (historyRecommendation) {
@@ -95,7 +106,7 @@ export function buildMerchantCategoryHistory(transactions = []) {
 
   for (const transaction of transactions) {
     const type = getTransactionType(transaction);
-    if (type === "transfer") {
+    if (type === "transfer" || type === "refunded") {
       continue;
     }
 
@@ -150,7 +161,7 @@ function getHistoryKey(merchant, type) {
 
 function isLearnableCategory(category, type) {
   const normalizedType = normalizeTransactionType(type);
-  if (normalizedType === "transfer") {
+  if (normalizedType === "transfer" || normalizedType === "refunded") {
     return false;
   }
 
@@ -180,12 +191,12 @@ function extractMerchantKey(description) {
 }
 
 export function normalizeTransactionType(type) {
-  return type === "transfer" || type === "income" ? type : "expense";
+  return type === "transfer" || type === "income" || type === "refunded" ? type : "expense";
 }
 
 export function isFallbackCategory(category, type = "expense") {
   const normalizedType = normalizeTransactionType(type);
-  if (normalizedType === "transfer") {
+  if (normalizedType === "transfer" || normalizedType === "refunded") {
     return false;
   }
 
@@ -202,6 +213,9 @@ export function getTransactionType(transaction) {
   }
   if (transaction?.type === "transfer") {
     return "transfer";
+  }
+  if (transaction?.type === "refunded") {
+    return "refunded";
   }
   return normalizeTransactionType(transaction?.direction);
 }
@@ -224,6 +238,9 @@ export function normalizeTransactionCategory(category, type = "expense", descrip
   if (normalizedType === "transfer") {
     return "转账";
   }
+  if (normalizedType === "refunded") {
+    return "已退款";
+  }
 
   const value = String(category || "").trim();
   const options = CATEGORY_OPTIONS_BY_TYPE[normalizedType];
@@ -240,7 +257,7 @@ export function normalizeLedgerTransaction(transaction) {
   const next = {
     ...transaction,
     direction:
-      type === "transfer"
+      type === "transfer" || type === "refunded"
         ? amount >= 0
           ? "income"
           : "expense"
@@ -255,6 +272,9 @@ export function normalizeLedgerTransaction(transaction) {
     } else {
       delete next.transferMatch;
     }
+  } else if (type === "refunded") {
+    next.type = "refunded";
+    delete next.transferMatch;
   } else {
     delete next.type;
     delete next.transferMatch;
@@ -280,7 +300,7 @@ export function summarizeSelection(transactions, filters = {}) {
   const typedTransactions = tagTransferTransactions(transactions);
   const selectedTransactions = filterLedgerTransactions(typedTransactions, filters);
   const cashFlowTransactions = selectedTransactions.filter(
-    (transaction) => transaction.type !== "transfer",
+    (transaction) => transaction.type !== "transfer" && transaction.type !== "refunded",
   );
 
   const income = roundMoney(
@@ -374,7 +394,7 @@ export function tagTransferTransactions(transactions) {
     }
   }
 
-  return normalizedTransactions.map((transaction, index) => {
+  const transferTaggedTransactions = normalizedTransactions.map((transaction, index) => {
     const shouldBeTransfer = transferIndexes.has(index);
     if (shouldBeTransfer) {
       return normalizeLedgerTransaction({
@@ -393,6 +413,79 @@ export function tagTransferTransactions(transactions) {
     const { type, transferMatch, ...withoutType } = transaction;
     return normalizeLedgerTransaction(withoutType);
   });
+
+  return tagRefundedTransactions(transferTaggedTransactions);
+}
+
+function tagRefundedTransactions(transactions) {
+  const normalizedTransactions = transactions.map(normalizeLedgerTransaction);
+  const items = normalizedTransactions.map((transaction, index) => ({
+    transaction,
+    index,
+    amount: roundMoney(Number(transaction.amount)),
+    accountId: transaction.accountId || UNASSIGNED_ACCOUNT_ID,
+    date: String(transaction.date || ""),
+    descriptionKey: getRefundDescriptionKey(transaction.description),
+  }));
+  const groups = new Map();
+
+  for (const item of items) {
+    if (
+      item.transaction.type === "transfer" ||
+      !item.descriptionKey ||
+      !isDateKey(item.date) ||
+      !Number.isFinite(item.amount) ||
+      item.amount === 0
+    ) {
+      continue;
+    }
+
+    const key = `${item.date}|${item.accountId}|${Math.abs(item.amount).toFixed(2)}|${item.descriptionKey}`;
+    const group = groups.get(key) || { income: [], expense: [] };
+    if (item.amount > 0) {
+      group.income.push(item);
+    } else {
+      group.expense.push(item);
+    }
+    groups.set(key, group);
+  }
+
+  const refundedIndexes = new Set();
+  for (const group of groups.values()) {
+    const usedIncomeIndexes = new Set();
+    for (const expenseItem of group.expense) {
+      const incomeIndex = group.income.findIndex(
+        (incomeItem, index) => !usedIncomeIndexes.has(index),
+      );
+      if (incomeIndex < 0) {
+        continue;
+      }
+
+      usedIncomeIndexes.add(incomeIndex);
+      refundedIndexes.add(expenseItem.index);
+      refundedIndexes.add(group.income[incomeIndex].index);
+    }
+  }
+
+  return normalizedTransactions.map((transaction, index) => {
+    if (refundedIndexes.has(index)) {
+      return normalizeLedgerTransaction({
+        ...transaction,
+        type: "refunded",
+        category: "已退款",
+      });
+    }
+    if (transaction.type !== "refunded") {
+      return normalizeLedgerTransaction(transaction);
+    }
+
+    const { type, ...withoutType } = transaction;
+    return normalizeLedgerTransaction(withoutType);
+  });
+}
+
+function getRefundDescriptionKey(description) {
+  return extractMerchantKey(description).toLowerCase();
 }
 
 export function filterLedgerTransactions(transactions, filters = {}) {
