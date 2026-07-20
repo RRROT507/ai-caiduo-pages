@@ -845,7 +845,9 @@ function renderCategoryOptions(type = elements.directionInput.value, preferredCa
 
 function renderTransactionTypeOptions(selectedValue = elements.directionInput.value) {
   const selectedType = normalizeTransactionType(selectedValue);
-  const transactionTypes = getTransactionTypes();
+  const transactionTypes = getTransactionTypes().filter(
+    (transactionType) => transactionType.value !== "refunded",
+  );
   replaceChildrenCompat(
     elements.directionInput,
     ...transactionTypes.map((transactionType) =>

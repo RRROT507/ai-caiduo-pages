@@ -18,7 +18,7 @@ const TRANSACTION_TYPES = [
 ];
 
 const EXPENSE_CATEGORY_RULES = [
-  ["餐饮", /餐厅|餐饮|早餐|午餐|晚餐|饭店|饭馆|面馆|面包|煎饼|小吃|烧烤|咖啡|外卖|美团外卖|饿了么|PIZZA\s*HUT|PIZZAHUT|必胜客|KFC|肯德基|麦当劳|汉堡王|华莱士|星巴克|瑞幸|海底捞|蜜雪冰城|火锅|奶茶|茶饮|喜茶|奈雪/u],
+  ["餐饮", /餐厅|餐饮|早餐|午餐|晚餐|饭店|饭馆|面馆|面包|煎饼|小吃|烧烤|咖啡|外卖|美团外卖|饿了么|PIZZA\s*HUT|PIZZAHUT|必胜客|KFC|肯德基|麦当劳|汉堡王|华莱士|星巴克|瑞幸|海底捞|蜜雪冰城|火锅|奶茶|茶饮|喜茶|奈雪/iu],
   ["交通", /地铁|公交|滴滴|打车|高德|加油|停车|铁路|火车|机票|航旅/u],
   ["购物", /淘宝|天猫|京东|拼多多|超市|便利店|商场|购物|小米|苹果|抖音商城/u],
   ["居家", /房租|物业|水费|电费|燃气|宽带|话费|移动|联通|电信/u],
@@ -346,6 +346,7 @@ export function summarizeSelection(transactions, filters = {}) {
 
 export function tagTransferTransactions(transactions) {
   const normalizedTransactions = transactions.map(normalizeLedgerTransaction);
+  const refundCandidateIndexes = findRefundedTransactionIndexes(normalizedTransactions);
   const items = normalizedTransactions.map((transaction, index) => ({
     transaction,
     index,
@@ -359,6 +360,7 @@ export function tagTransferTransactions(transactions) {
     if (
       !item.accountId ||
       item.accountId === UNASSIGNED_ACCOUNT_ID ||
+      refundCandidateIndexes.has(item.index) ||
       !isDateKey(item.date) ||
       !Number.isFinite(item.amount) ||
       item.amount === 0
@@ -419,7 +421,27 @@ export function tagTransferTransactions(transactions) {
 
 function tagRefundedTransactions(transactions) {
   const normalizedTransactions = transactions.map(normalizeLedgerTransaction);
-  const items = normalizedTransactions.map((transaction, index) => ({
+  const refundedIndexes = findRefundedTransactionIndexes(normalizedTransactions);
+
+  return normalizedTransactions.map((transaction, index) => {
+    if (refundedIndexes.has(index)) {
+      return normalizeLedgerTransaction({
+        ...transaction,
+        type: "refunded",
+        category: "已退款",
+      });
+    }
+    if (transaction.type !== "refunded") {
+      return normalizeLedgerTransaction(transaction);
+    }
+
+    const { type, ...withoutType } = transaction;
+    return normalizeLedgerTransaction(withoutType);
+  });
+}
+
+function findRefundedTransactionIndexes(transactions) {
+  const items = transactions.map((transaction, index) => ({
     transaction,
     index,
     amount: roundMoney(Number(transaction.amount)),
@@ -467,21 +489,7 @@ function tagRefundedTransactions(transactions) {
     }
   }
 
-  return normalizedTransactions.map((transaction, index) => {
-    if (refundedIndexes.has(index)) {
-      return normalizeLedgerTransaction({
-        ...transaction,
-        type: "refunded",
-        category: "已退款",
-      });
-    }
-    if (transaction.type !== "refunded") {
-      return normalizeLedgerTransaction(transaction);
-    }
-
-    const { type, ...withoutType } = transaction;
-    return normalizeLedgerTransaction(withoutType);
-  });
+  return refundedIndexes;
 }
 
 function getRefundDescriptionKey(description) {

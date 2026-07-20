@@ -359,7 +359,6 @@ test("scopes category options by type and adds quick transfer entries", async (t
       "支出",
       "收入",
       "转账",
-      "已退款",
     ]);
 
     let categoryOptions = await page.locator("#categoryInput option").allTextContents();
@@ -379,13 +378,6 @@ test("scopes category options by type and adds quick transfer entries", async (t
     assert.deepEqual(await page.locator("#categoryInput option").allTextContents(), ["转账"]);
     assert.equal(await page.locator("#categoryInput").isDisabled(), true);
     assert.equal(await page.locator("#transferToAccountInput").isVisible(), true);
-
-    await page.selectOption("#directionInput", "refunded");
-    assert.deepEqual(await page.locator("#categoryInput option").allTextContents(), ["已退款"]);
-    assert.equal(await page.locator("#categoryInput").isDisabled(), true);
-    assert.equal(await page.locator("#transferToAccountInput").isVisible(), false);
-
-    await page.selectOption("#directionInput", "transfer");
 
     await page.selectOption("#accountInput", "checking");
     await page.selectOption("#transferToAccountInput", "credit");

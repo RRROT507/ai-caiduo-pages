@@ -75,6 +75,8 @@ test("recommends categories with source and confidence without guessing", () => 
     merchant: "PIZZAHUT",
   });
   assert.equal(recommendCategory("KFC", "expense").category, "餐饮");
+  assert.equal(recommendCategory("Pizza Hut", "expense").category, "餐饮");
+  assert.equal(recommendCategory("kfc", "expense").category, "餐饮");
   assert.equal(recommendCategory("麦当劳", "expense").category, "餐饮");
   assert.deepEqual(recommendCategory("支付宝-未知商户服务", "expense"), {
     category: "其他支出",
@@ -507,6 +509,54 @@ test("tags same-day same-account opposite merchant rows as refunded and excludes
   assert.equal(summary.balance, 963);
   assert.equal(summary.count, 4);
   assert.deepEqual(summary.categoryTotals, [{ category: "餐饮", amount: 37 }]);
+});
+
+test("prioritizes strict refund pairs over unrelated same-amount transfer candidates", () => {
+  const transactions = tagTransferTransactions([
+    {
+      id: "unrelated-income",
+      date: "2026-03-02",
+      description: "账户调整",
+      amount: 14,
+      direction: "income",
+      category: "其他收入",
+      accountId: "credit",
+      sequence: 1,
+    },
+    {
+      id: "hutoujun-refund",
+      date: "2026-03-02",
+      description: "财付通-虎头军煎饼（鼎成中心店）",
+      amount: 14,
+      direction: "income",
+      category: "退款",
+      accountId: "checking",
+      sequence: 2,
+    },
+    {
+      id: "hutoujun-payment",
+      date: "2026-03-02",
+      description: "财付通-虎头军煎饼（鼎成中心店）",
+      amount: -14,
+      direction: "expense",
+      category: "餐饮",
+      accountId: "checking",
+      sequence: 3,
+    },
+  ]);
+
+  assert.equal(getTransactionType(transactions.find((transaction) => transaction.id === "hutoujun-refund")), "refunded");
+  assert.equal(getTransactionType(transactions.find((transaction) => transaction.id === "hutoujun-payment")), "refunded");
+  assert.equal(getTransactionType(transactions.find((transaction) => transaction.id === "unrelated-income")), "income");
+
+  const summary = summarizeSelection(transactions, {
+    startDate: "2026-03-02",
+    endDate: "2026-03-02",
+  });
+
+  assert.equal(summary.income, 14);
+  assert.equal(summary.expense, 0);
+  assert.equal(summary.balance, 14);
 });
 
 test("removes stale transfer tags when the matching opposite transaction is gone", () => {
