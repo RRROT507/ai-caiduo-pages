@@ -359,6 +359,7 @@ test("scopes category options by type and adds quick transfer entries", async (t
       "支出",
       "收入",
       "转账",
+      "已退款",
     ]);
 
     let categoryOptions = await page.locator("#categoryInput option").allTextContents();
@@ -378,6 +379,13 @@ test("scopes category options by type and adds quick transfer entries", async (t
     assert.deepEqual(await page.locator("#categoryInput option").allTextContents(), ["转账"]);
     assert.equal(await page.locator("#categoryInput").isDisabled(), true);
     assert.equal(await page.locator("#transferToAccountInput").isVisible(), true);
+
+    await page.selectOption("#directionInput", "refunded");
+    assert.deepEqual(await page.locator("#categoryInput option").allTextContents(), ["已退款"]);
+    assert.equal(await page.locator("#categoryInput").isDisabled(), true);
+    assert.equal(await page.locator("#transferToAccountInput").isVisible(), false);
+
+    await page.selectOption("#directionInput", "transfer");
 
     await page.selectOption("#accountInput", "checking");
     await page.selectOption("#transferToAccountInput", "credit");
@@ -808,6 +816,26 @@ test("colors transaction record category type and amount by transaction type", a
             accountId: "credit",
             sequence: 4,
           },
+          {
+            id: "refund-in",
+            date: "2026-07-13",
+            description: "财付通-虎头军煎饼（鼎成中心店）",
+            amount: 14,
+            direction: "income",
+            category: "退款",
+            accountId: "checking",
+            sequence: 5,
+          },
+          {
+            id: "refund-out",
+            date: "2026-07-13",
+            description: "财付通-虎头军煎饼（鼎成中心店）",
+            amount: -14,
+            direction: "expense",
+            category: "餐饮",
+            accountId: "checking",
+            sequence: 6,
+          },
         ]),
       );
     });
@@ -843,16 +871,16 @@ test("colors transaction record category type and amount by transaction type", a
       );
     });
 
-    assert.equal(rowStyles["income-row"].category.color, "rgb(19, 101, 82)");
-    assert.equal(rowStyles["income-row"].type.color, "rgb(19, 101, 82)");
-    assert.equal(rowStyles["income-row"].amount.color, "rgb(19, 101, 82)");
+    assert.equal(rowStyles["income-row"].category.color, "rgb(215, 98, 72)");
+    assert.equal(rowStyles["income-row"].type.color, "rgb(215, 98, 72)");
+    assert.equal(rowStyles["income-row"].amount.color, "rgb(215, 98, 72)");
     assert.equal(rowStyles["income-row"].type.text, "收入");
     assert.notEqual(rowStyles["income-row"].type.background, "rgba(0, 0, 0, 0)");
     assert.ok(parseFloat(rowStyles["income-row"].type.radius) > 10);
 
-    assert.equal(rowStyles["expense-row"].category.color, "rgb(215, 98, 72)");
-    assert.equal(rowStyles["expense-row"].type.color, "rgb(215, 98, 72)");
-    assert.equal(rowStyles["expense-row"].amount.color, "rgb(215, 98, 72)");
+    assert.equal(rowStyles["expense-row"].category.color, "rgb(19, 101, 82)");
+    assert.equal(rowStyles["expense-row"].type.color, "rgb(19, 101, 82)");
+    assert.equal(rowStyles["expense-row"].amount.color, "rgb(19, 101, 82)");
     assert.equal(rowStyles["expense-row"].type.text, "支出");
     assert.notEqual(rowStyles["expense-row"].type.background, "rgba(0, 0, 0, 0)");
     assert.ok(parseFloat(rowStyles["expense-row"].type.radius) > 10);
@@ -865,6 +893,16 @@ test("colors transaction record category type and amount by transaction type", a
       assert.equal(rowStyles[transferId].type.text, "转账");
       assert.notEqual(rowStyles[transferId].type.background, "rgba(0, 0, 0, 0)");
       assert.ok(parseFloat(rowStyles[transferId].type.radius) > 10);
+    }
+
+    for (const refundId of ["refund-in", "refund-out"]) {
+      assert.equal(rowStyles[refundId].category.color, "rgb(102, 112, 106)");
+      assert.equal(rowStyles[refundId].type.color, "rgb(102, 112, 106)");
+      assert.equal(rowStyles[refundId].amount.color, "rgb(105, 113, 109)");
+      assert.equal(rowStyles[refundId].category.text, "已退款");
+      assert.equal(rowStyles[refundId].type.text, "已退款");
+      assert.notEqual(rowStyles[refundId].type.background, "rgba(0, 0, 0, 0)");
+      assert.ok(parseFloat(rowStyles[refundId].type.radius) > 10);
     }
   } finally {
     await browser.close();

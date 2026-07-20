@@ -708,16 +708,17 @@ td {
 }
 
 .income-text {
-  color: var(--green-dark);
-  font-weight: 800;
-}
-
-.expense-text {
   color: var(--coral);
   font-weight: 800;
 }
 
-.transfer-text {
+.expense-text {
+  color: var(--green-dark);
+  font-weight: 800;
+}
+
+.transfer-text,
+.refunded-text {
   color: #69716d;
   font-weight: 800;
 }
@@ -744,18 +745,20 @@ td {
 
 .tag.income-tag,
 .type-tag.income-tag {
-  background: #eef4ea;
-  color: var(--green-dark);
-}
-
-.tag.expense-tag,
-.type-tag.expense-tag {
   background: #f9e8e3;
   color: var(--coral);
 }
 
+.tag.expense-tag,
+.type-tag.expense-tag {
+  background: #eef4ea;
+  color: var(--green-dark);
+}
+
 .tag.transfer-tag,
-.type-tag.transfer-tag {
+.type-tag.transfer-tag,
+.tag.refunded-tag,
+.type-tag.refunded-tag {
   background: #ecefed;
   color: #66706a;
 }

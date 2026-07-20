@@ -840,7 +840,7 @@ function renderCategoryOptions(type = elements.directionInput.value, preferredCa
     }),
   );
   elements.categoryInput.value = categories.includes(nextCategory) ? nextCategory : categories[0];
-  elements.categoryInput.disabled = normalizedType === "transfer";
+  elements.categoryInput.disabled = normalizedType === "transfer" || normalizedType === "refunded";
 }
 
 function renderTransactionTypeOptions(selectedValue = elements.directionInput.value) {
@@ -1117,8 +1117,21 @@ function createTransactionRow(transaction, accountBalance = 0) {
   const category = normalizeTransactionCategory(transaction.category, type, transaction.description);
   const isIncome = type === "income";
   const isTransfer = type === "transfer";
-  const amountClass = isTransfer ? "transfer-text" : isIncome ? "income-text" : "expense-text";
-  const tagClass = isTransfer ? "transfer-tag" : isIncome ? "income-tag" : "expense-tag";
+  const isRefunded = type === "refunded";
+  const amountClass = isTransfer
+    ? "transfer-text"
+    : isRefunded
+      ? "refunded-text"
+      : isIncome
+        ? "income-text"
+        : "expense-text";
+  const tagClass = isTransfer
+    ? "transfer-tag"
+    : isRefunded
+      ? "refunded-tag"
+      : isIncome
+        ? "income-tag"
+        : "expense-tag";
   const typeLabel = getTypeLabel(type);
   row.innerHTML = `
     <td data-label="选择" class="select-cell">
@@ -1153,6 +1166,7 @@ function createPendingRow(transaction) {
   const category = normalizeTransactionCategory(transaction.category, type, transaction.description);
   const isIncome = type === "income";
   const isTransfer = type === "transfer";
+  const isRefunded = type === "refunded";
   const categories = getCategoriesForType(type);
   row.innerHTML = `
     <td data-label="日期">${escapeHtml(transaction.date)}</td>
@@ -1160,7 +1174,7 @@ function createPendingRow(transaction) {
     <td data-label="分类">
       <select class="compact-select" data-pending-category-id="${escapeHtml(
         transaction.previewId,
-      )}" aria-label="调整分类" ${isTransfer ? "disabled" : ""}>
+      )}" aria-label="调整分类" ${isTransfer || isRefunded ? "disabled" : ""}>
         ${categories.map(
           (optionCategory) =>
             `<option value="${escapeHtml(optionCategory)}" ${
@@ -1170,7 +1184,7 @@ function createPendingRow(transaction) {
       </select>
     </td>
     <td data-label="金额" class="amount-cell ${
-      isTransfer ? "transfer-text" : isIncome ? "income-text" : "expense-text"
+      isTransfer ? "transfer-text" : isRefunded ? "refunded-text" : isIncome ? "income-text" : "expense-text"
     }">${escapeHtml(
       formatSignedMoney(transaction.amount),
     )}</td>
