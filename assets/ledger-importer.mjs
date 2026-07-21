@@ -14,7 +14,8 @@ const CMB_INSTITUTION = "招商银行";
 const CMB_TRANSACTION_STATEMENT_PATTERN =
   /招商银行交易流水|Transaction Statement of China Merchants Bank/u;
 const CMB_CREDIT_CARD_PATTERN = /招商银行信用卡对账单|CMB Credit Card Statement/u;
-const ALIPAY_STATEMENT_PATTERN = /支付宝支付科技有限公司|交易流水证明|收\/付款方式/u;
+const ALIPAY_STATEMENT_PATTERN =
+  /支付宝支付科技有限公司|支付宝(?:交易流水证明|账单)|支付宝[\s\S]{0,80}收\/付款方式/u;
 
 export async function analyzeLedgerFile(file, options = {}) {
   if (!file) {

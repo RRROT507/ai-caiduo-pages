@@ -415,16 +415,18 @@ async function importSelectedFile() {
       ...(result.skippedItems || []).map(formatAlipaySkippedNotice),
     ];
     const isAlipayStatement = result.statementType === "alipay";
-    const selectedImportAccountId = elements.importAccountInput.value || UNASSIGNED_ACCOUNT_ID;
+    const alipayAccountId =
+      isAlipayStatement && state.pendingTransactions.length > 0 ? findExistingAlipayAccountId() : "";
     const accountResolution = isAlipayStatement
-      ? { mode: "manual", accountId: "", candidate: null }
+      ? alipayAccountId
+        ? { mode: "matched", accountId: alipayAccountId, candidate: null }
+        : { mode: "manual", accountId: "", candidate: null }
       : resolveImportAccountCandidate(result.accountCandidate);
     state.pendingAccountCandidate = accountResolution.candidate;
     state.pendingAccountNotice =
       isAlipayStatement &&
-      !result.accountCandidate &&
       state.pendingTransactions.length > 0 &&
-      selectedImportAccountId === UNASSIGNED_ACCOUNT_ID
+      !alipayAccountId
         ? "未识别到账户，请手动选择入账账户"
         : accountResolution.candidate
           ? ""
@@ -439,6 +441,8 @@ async function importSelectedFile() {
     } else if (accountResolution.mode === "new") {
       elements.importAccountInput.value = UNASSIGNED_ACCOUNT_ID;
       elements.addDetectedAccountInput.checked = true;
+    } else if (isAlipayStatement && state.pendingTransactions.length > 0) {
+      elements.importAccountInput.value = UNASSIGNED_ACCOUNT_ID;
     }
     renderPendingImport();
     setImportStatus(`${result.message}，请确认后入账`);
@@ -1615,13 +1619,19 @@ function findExistingTransactionForAlipayItem(item, accountId) {
     };
   }
 
-  if (candidates.length === 1) {
-    return { status: "matched", transaction: candidates[0] };
-  }
-
   const scored = candidates
     .map((transaction) => ({ transaction, score: scoreAlipayDescriptionMatch(transaction, item) }))
     .sort((a, b) => b.score - a.score);
+  if (candidates.length === 1) {
+    if (scored[0].score >= 100) {
+      return { status: "matched", transaction: scored[0].transaction };
+    }
+    return {
+      status: "ambiguous",
+      message: `找到可能匹配的已有流水，但描述匹配不够明确：${item.paymentAccountCandidate?.displayName || item.paymentMethod} ${item.date} ${formatMoney(Math.abs(item.amount))}，已跳过。`,
+    };
+  }
+
   const scoreMargin = scored[0].score - scored[1].score;
   if (scored[0].score >= 100 && scoreMargin >= 25) {
     return { status: "matched", transaction: scored[0].transaction };
@@ -1696,6 +1706,13 @@ function formatAlipaySkippedNotice(item) {
     return `已跳过不计收支或零金额记录：${item.description || item.paymentMethod || "支付宝记录"}`;
   }
   return `已跳过支付宝记录：${item?.description || item?.paymentMethod || "未支持付款方式"}`;
+}
+
+function findExistingAlipayAccountId() {
+  const account =
+    state.accounts.find((candidate) => candidate.id === "alipay") ||
+    state.accounts.find((candidate) => /^(?:支付宝|支付宝余额|余额)$/u.test(String(candidate.name || "").trim()));
+  return account?.id || "";
 }
 
 function resolveImportAccountCandidate(candidate) {

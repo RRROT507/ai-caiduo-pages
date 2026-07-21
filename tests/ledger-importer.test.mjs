@@ -340,6 +340,21 @@ test("analyzes a local statement text file with fallback parsing", async () => {
   );
 });
 
+test("does not treat a generic transaction proof as an Alipay statement", async () => {
+  const file = new File(["交易流水证明\n2026-03-01 便利店购物 -12.50"], "generic-proof.txt", {
+    type: "text/plain",
+  });
+
+  const result = await analyzeLedgerFile(file, { fallbackYear: 2026 });
+
+  assert.equal(result.mode, "local");
+  assert.notEqual(result.statementType, "alipay");
+  assert.deepEqual(
+    result.transactions.map(({ date, description, amount }) => ({ date, description, amount })),
+    [{ date: "2026-03-01", description: "便利店购物", amount: -12.5 }],
+  );
+});
+
 test("returns Alipay reconciliation and skipped items even when AI endpoint is configured", async () => {
   const endpoint = await startJsonEndpoint({
     transactions: [

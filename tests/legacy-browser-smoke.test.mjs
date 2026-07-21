@@ -1324,7 +1324,7 @@ test("skips unmatched Alipay bank cards without adding transactions", async (t) 
   }
 });
 
-test("imports true Alipay balance rows into the selected Alipay account", async (t) => {
+test("imports true Alipay balance rows into an existing Alipay account without manual selection", async (t) => {
   if (!existsSync(edgePath)) {
     t.skip("Microsoft Edge is not available in this environment");
     return;
@@ -1360,7 +1360,10 @@ test("imports true Alipay balance rows into the selected Alipay account", async 
       localStorage.clear();
       localStorage.setItem(
         "ai-caiduo-accounts-v1",
-        JSON.stringify([{ id: "alipay", name: "支付宝", openingBalance: 100 }]),
+        JSON.stringify([
+          { id: "cmb-credit-card", name: "招商信用卡", openingBalance: 0 },
+          { id: "alipay", name: "支付宝", openingBalance: 100 },
+        ]),
       );
     });
     await page.reload({ waitUntil: "domcontentloaded" });
@@ -1377,7 +1380,7 @@ test("imports true Alipay balance rows into the selected Alipay account", async 
     await page.click("#importButton");
     await page.waitForSelector("#pendingRows tr");
     assert.equal(await page.locator("#detectedAccountPanel").isHidden(), true);
-    await page.selectOption("#importAccountInput", "alipay");
+    assert.equal(await page.locator("#importAccountInput").inputValue(), "alipay");
     await page.click("#confirmImportButton");
     await page.waitForFunction(() =>
       (document.querySelector("#importStatus")?.textContent || "").includes("已入账"),
@@ -1392,6 +1395,83 @@ test("imports true Alipay balance rows into the selected Alipay account", async 
     assert.equal(await page.locator("#transactionRows tr").count(), 1);
     assert.match(await page.locator("#transactionRows tr").first().textContent(), /星巴克/u);
     assert.match(await page.locator("#transactionRows tr").first().textContent(), /¥67\.50/u);
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
+test("does not annotate a single unrelated Alipay bank-card transaction", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer();
+  const browser = await chromium.launch({ headless: true, executablePath: edgePath });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem(
+        "ai-caiduo-accounts-v1",
+        JSON.stringify([
+          {
+            id: "credit-1755",
+            name: "招商银行信用卡 尾号1755",
+            institution: "招商银行",
+            accountNumberLast4: "1755",
+            accountFingerprint: "cmb-credit-card:1755",
+            openingBalance: 0,
+          },
+        ]),
+      );
+      localStorage.setItem(
+        "ai-caiduo-transactions-v1",
+        JSON.stringify([
+          {
+            id: "unrelated-card-row",
+            date: "2026-03-24",
+            description: "便利店购物",
+            amount: -14.49,
+            direction: "expense",
+            category: "其他支出",
+            accountId: "credit-1755",
+            sequence: 1,
+          },
+        ]),
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.setInputFiles("#fileInput", {
+      name: "alipay-unrelated-card-row.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(
+        "支付宝支付科技有限公司 交易流水证明\n" +
+          "收/支 交易对方 商品说明 付款方式 金额 交易订单号 商家订单号 交易时间\n" +
+          "支出 高德打车 高德打车订单 招商银行信用卡(1755) 14.49 20260324220014662214274 0003N202603240000000014 2026-03-24 21:53:45",
+      ),
+    });
+    await page.click("#importButton");
+    await page.waitForFunction(() =>
+      (document.querySelector("#detectedAccountPanel")?.textContent || "").includes("描述匹配不够明确"),
+    );
+
+    assert.equal(await page.locator("#pendingRows tr").count(), 0);
+    assert.equal(await page.locator("#confirmImportButton").isDisabled(), true);
+    const savedTransactions = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ai-caiduo-transactions-v1") || "[]"),
+    );
+    assert.equal(savedTransactions[0].description, "便利店购物");
   } finally {
     await browser.close();
     await server.close();
