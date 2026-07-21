@@ -6,6 +6,7 @@ import {
   analyzeLedgerFile,
   classifyAlipayPaymentMethod,
   parseAlipayStatement,
+  parseBankOfBeijingStatementText,
   parseCmbCreditCardStatementText,
   parseCmbTransactionStatement,
 } from "../assets/ledger-importer.mjs";
@@ -699,6 +700,109 @@ Transaction Statement of China Merchants Bank
     accountNumberLast4: "3598",
     accountFingerprint: "cmb:3598",
     openingBalanceEstimate: 3968.26,
+  });
+});
+
+test("parses Bank of Beijing personal transaction statement rows", () => {
+  const transactions = parseBankOfBeijingStatementText(
+    `北京银行个人客户交易流水清单
+客户姓名：张凯 日期范围：2026-02-01—2026-03-31
+卡/账号：6214680067553394 币种：人民币 流水单号：AOFC001006134243338
+交易日期 币种 钞汇 业务摘要 发生额 余额 对方户名 对方账号
+2026-03-29 人民币 汇 个贷还款 -6554.36 4431.41
+2026-03-29 人民币 汇 公贷 -2461.00 10985.77 北京住房公积金管理中心 010905205001201110*
+2026-03-29 人民币 汇 转账 +13446.77 13446.77 张凯 6214850121113598
+2026-03-29 人民币 汇 个贷还款 -2507.71 0.00
+2026-03-21 人民币 汇 利息 +0.56 2507.71 活期储蓄存款利息支出 521031000
+2026-03-13 人民币 汇 还款 -618.33 2507.15
+2026-02-28 人民币 汇 个贷还款 -8106.29 3125.48
+2026-02-28 人民币 汇 公贷 -2215.00 11231.77 北京住房公积金管理中心 010905205001201110*
+2026-02-28 人民币 汇 转账 +13446.77 13446.77 张凯 6214850121113598
+2026-02-28 人民币 汇 个贷还款 -1098.95 0.00
+2026-02-23 人民币 汇 转账 -4000.00 1098.95 张凯 6214850121113598
+2026-02-13 人民币 汇 还款 -684.58 5098.95
+第1页 共1页`,
+  );
+
+  assert.equal(transactions.length, 12);
+  assert.deepEqual(
+    transactions.slice(0, 5).map(({ date, description, amount, direction, category, source }) => ({
+      date,
+      description,
+      amount,
+      direction,
+      category,
+      source,
+    })),
+    [
+      {
+        date: "2026-03-29",
+        description: "个贷还款",
+        amount: -6554.36,
+        direction: "expense",
+        category: "其他支出",
+        source: "file",
+      },
+      {
+        date: "2026-03-29",
+        description: "公贷 北京住房公积金管理中心",
+        amount: -2461,
+        direction: "expense",
+        category: "其他支出",
+        source: "file",
+      },
+      {
+        date: "2026-03-29",
+        description: "转账 张凯",
+        amount: 13446.77,
+        direction: "income",
+        category: "其他收入",
+        source: "file",
+      },
+      {
+        date: "2026-03-29",
+        description: "个贷还款",
+        amount: -2507.71,
+        direction: "expense",
+        category: "其他支出",
+        source: "file",
+      },
+      {
+        date: "2026-03-21",
+        description: "利息 活期储蓄存款利息支出",
+        amount: 0.56,
+        direction: "income",
+        category: "利息",
+        source: "file",
+      },
+    ],
+  );
+});
+
+test("extracts account candidate from Bank of Beijing statement", async () => {
+  const file = new File(
+    [
+      `北京银行个人客户交易流水清单
+客户姓名：张凯 日期范围：2026-02-01—2026-03-31
+卡/账号：6214680067553394 币种：人民币 流水单号：AOFC001006134243338
+交易日期 币种 钞汇 业务摘要 发生额 余额 对方户名 对方账号
+2026-03-29 人民币 汇 个贷还款 -6554.36 4431.41
+2026-02-13 人民币 汇 还款 -684.58 5098.95`,
+    ],
+    "bank-of-beijing-statement.txt",
+    { type: "text/plain" },
+  );
+
+  const result = await analyzeLedgerFile(file, { fallbackYear: 2026 });
+
+  assert.equal(result.mode, "local");
+  assert.equal(result.statementType, "bank-of-beijing");
+  assert.deepEqual(result.accountCandidate, {
+    institution: "北京银行",
+    accountName: "北京银行 尾号3394",
+    accountNumberLast4: "3394",
+    accountFingerprint: "bank-of-beijing:3394",
+    openingBalanceEstimate: 5783.53,
   });
 });
 

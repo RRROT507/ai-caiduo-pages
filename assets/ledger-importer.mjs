@@ -11,9 +11,11 @@ import {
 const PDF_TYPE = "application/pdf";
 const TEXT_LIKE_EXTENSIONS = [".txt", ".csv", ".tsv", ".ofx", ".qfx"];
 const CMB_INSTITUTION = "招商银行";
+const BANK_OF_BEIJING_INSTITUTION = "北京银行";
 const CMB_TRANSACTION_STATEMENT_PATTERN =
   /招商银行交易流水|Transaction Statement of China Merchants Bank/u;
 const CMB_CREDIT_CARD_PATTERN = /招商银行信用卡对账单|CMB Credit Card Statement/u;
+const BANK_OF_BEIJING_STATEMENT_PATTERN = /北京银行个人客户交易流水清单/u;
 const ALIPAY_STATEMENT_PATTERN =
   /支付宝支付科技有限公司|支付宝(?:交易流水证明|账单)|支付宝[\s\S]{0,80}收\/付款方式/u;
 
@@ -126,6 +128,29 @@ export function parseCmbTransactionStatementText(text) {
   return parseCmbTransactionStatement(text).transactions;
 }
 
+export function parseBankOfBeijingStatement(text) {
+  const rows = [];
+
+  for (const rawLine of String(text).split(/\r?\n/u)) {
+    const line = rawLine.replace(/\s+/gu, " ").trim();
+    const parsed = parseBankOfBeijingStatementLine(line);
+    if (parsed) {
+      rows.push(parsed);
+    }
+  }
+
+  const transactions = rows.map(({ statementBalance, counterpartyAccount, ...transaction }) => transaction);
+  return {
+    transactions,
+    accountCandidate: buildBankOfBeijingAccountCandidate(text, rows),
+    statementType: "bank-of-beijing",
+  };
+}
+
+export function parseBankOfBeijingStatementText(text) {
+  return parseBankOfBeijingStatement(text).transactions;
+}
+
 function parseLocalStatementText(text, options) {
   if (!text.trim()) {
     return { transactions: [], accountCandidate: null };
@@ -133,6 +158,10 @@ function parseLocalStatementText(text, options) {
 
   if (ALIPAY_STATEMENT_PATTERN.test(text)) {
     return parseAlipayStatement(text, options);
+  }
+
+  if (BANK_OF_BEIJING_STATEMENT_PATTERN.test(text)) {
+    return parseBankOfBeijingStatement(text);
   }
 
   if (CMB_TRANSACTION_STATEMENT_PATTERN.test(text)) {
@@ -525,6 +554,90 @@ function parseCmbTransactionStatementLine(line) {
     source: "file",
     statementBalance: Number.isFinite(statementBalance) ? roundMoney(statementBalance) : null,
   };
+}
+
+function parseBankOfBeijingStatementLine(line) {
+  const match = line.match(
+    /^(\d{4}-\d{2}-\d{2})\s+人民币\s+\S+\s+(.+?)\s+([-+]?\d[\d,]*\.\d{2})\s+([-+]?\d[\d,]*\.\d{2})(?:\s+(.+))?$/u,
+  );
+  if (!match) {
+    return null;
+  }
+
+  const date = normalizeDate(match[1]);
+  const summary = String(match[2] || "").trim();
+  const amount = parseAmount(match[3]);
+  const statementBalance = parseAmount(match[4]);
+  const counterparty = parseBankOfBeijingCounterparty(match[5] || "");
+  if (!date || !summary || !Number.isFinite(amount) || amount === 0) {
+    return null;
+  }
+
+  const direction = amount < 0 ? "expense" : "income";
+  const description = buildBankOfBeijingDescription(summary, counterparty.name);
+
+  return {
+    date,
+    description,
+    amount: roundMoney(amount),
+    direction,
+    category: inferCategory(description, direction),
+    source: "file",
+    statementBalance: Number.isFinite(statementBalance) ? roundMoney(statementBalance) : null,
+    counterpartyAccount: counterparty.account,
+  };
+}
+
+function parseBankOfBeijingCounterparty(value) {
+  const text = String(value || "").replace(/\s+/gu, " ").trim();
+  if (!text) {
+    return { name: "", account: "" };
+  }
+
+  const match = text.match(/^(.+?)\s+([0-9*]{6,})$/u);
+  if (!match) {
+    return { name: text, account: "" };
+  }
+
+  return {
+    name: match[1].trim(),
+    account: match[2].trim(),
+  };
+}
+
+function buildBankOfBeijingDescription(summary, counterpartyName) {
+  const parts = [summary, counterpartyName]
+    .map((part) => String(part || "").replace(/\s+/gu, " ").trim())
+    .filter(Boolean);
+  return [...new Set(parts)].join(" ");
+}
+
+function buildBankOfBeijingAccountCandidate(text, rows) {
+  const accountNumber = findBankOfBeijingAccountNumber(text);
+  if (!accountNumber) {
+    return null;
+  }
+
+  const accountNumberLast4 = accountNumber.slice(-4);
+  const earliestRowWithBalance = [...rows]
+    .reverse()
+    .find((row) => Number.isFinite(row.statementBalance));
+  const openingBalanceEstimate = earliestRowWithBalance
+    ? roundMoney(earliestRowWithBalance.statementBalance - earliestRowWithBalance.amount)
+    : 0;
+
+  return {
+    institution: BANK_OF_BEIJING_INSTITUTION,
+    accountName: `${BANK_OF_BEIJING_INSTITUTION} 尾号${accountNumberLast4}`,
+    accountNumberLast4,
+    accountFingerprint: `bank-of-beijing:${accountNumberLast4}`,
+    openingBalanceEstimate,
+  };
+}
+
+function findBankOfBeijingAccountNumber(text) {
+  const match = String(text).match(/卡\/账号[:：]\s*(\d{12,24})/u);
+  return match ? match[1] : "";
 }
 
 function buildCmbAccountCandidate(text, rows) {
