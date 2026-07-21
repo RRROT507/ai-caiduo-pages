@@ -42,6 +42,7 @@ export async function analyzeLedgerFile(file, options = {}) {
           accountCandidate: localResult.accountCandidate,
           reconciliationItems: localReconciliationItems,
           skippedItems: localSkippedItems,
+          statementType: localResult.statementType,
           mode: "ai",
           message: "AI 已生成预览",
         };
@@ -59,6 +60,7 @@ export async function analyzeLedgerFile(file, options = {}) {
       accountCandidate: localResult.accountCandidate,
       reconciliationItems: localReconciliationItems,
       skippedItems: localSkippedItems,
+      statementType: localResult.statementType,
       mode: "local",
       message: "已使用本地解析生成预览",
     };
@@ -69,6 +71,7 @@ export async function analyzeLedgerFile(file, options = {}) {
     reconciliationItems: localReconciliationItems,
     skippedItems: localSkippedItems,
     accountCandidate: localResult.accountCandidate,
+    statementType: localResult.statementType,
     mode: options.endpoint ? "empty" : "needs-ai-backend",
     message:
       file.type === PDF_TYPE || getFileExtension(file.name) === ".pdf"
@@ -213,6 +216,7 @@ export function parseAlipayStatement(text, options = {}) {
     reconciliationItems,
     skippedItems,
     accountCandidate: null,
+    statementType: "alipay",
   };
 }
 

@@ -79,6 +79,7 @@ test("parses Alipay balance rows as importable Alipay transactions", () => {
 支出 星巴克 星巴克咖啡 支付宝余额 32.50 20260301220014662214274 A0001 2026-03-01 09:30:00`);
 
   assert.equal(result.reconciliationItems.length, 0);
+  assert.equal(result.statementType, "alipay");
   assert.deepEqual(
     result.transactions.map(({ date, description, amount, direction, category, source }) => ({
       date,

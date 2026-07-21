@@ -414,11 +414,23 @@ async function importSelectedFile() {
       ...alipayUpdates.notices,
       ...(result.skippedItems || []).map(formatAlipaySkippedNotice),
     ];
-    const accountResolution = resolveImportAccountCandidate(result.accountCandidate);
+    const isAlipayStatement = result.statementType === "alipay";
+    const selectedImportAccountId = elements.importAccountInput.value || UNASSIGNED_ACCOUNT_ID;
+    const accountResolution = isAlipayStatement
+      ? { mode: "manual", accountId: "", candidate: null }
+      : resolveImportAccountCandidate(result.accountCandidate);
     state.pendingAccountCandidate = accountResolution.candidate;
-    state.pendingAccountNotice = accountResolution.candidate
-      ? ""
-      : "未识别到账户，请手动选择入账账户";
+    state.pendingAccountNotice =
+      isAlipayStatement &&
+      !result.accountCandidate &&
+      state.pendingTransactions.length > 0 &&
+      selectedImportAccountId === UNASSIGNED_ACCOUNT_ID
+        ? "未识别到账户，请手动选择入账账户"
+        : accountResolution.candidate
+          ? ""
+          : isAlipayStatement
+            ? ""
+            : "未识别到账户，请手动选择入账账户";
     state.pendingAccountMode = accountResolution.mode;
     state.pendingMatchedAccountId = accountResolution.accountId;
 
@@ -858,26 +870,24 @@ function hasPendingImportItems() {
 function renderDetectedAccountPanel() {
   const candidate = state.pendingAccountCandidate;
   const hasCandidate = Boolean(candidate && state.pendingTransactions.length > 0);
-  const hasNotice = Boolean(state.pendingAccountNotice && state.pendingTransactions.length > 0);
-  const hasImportNotices = state.pendingImportNotices.length > 0;
+  const pendingNotices = state.pendingImportNotices || [];
+  const hasNotice = Boolean(
+    (state.pendingAccountNotice || pendingNotices.length > 0) &&
+      (hasPendingImportItems() || pendingNotices.length > 0),
+  );
   elements.detectedAccountPanel.classList.toggle(
     "is-hidden",
-    !hasCandidate && !hasNotice && !hasImportNotices,
+    !hasCandidate && !hasNotice,
   );
-  if (!hasCandidate && !hasNotice && !hasImportNotices) {
+  if (!hasCandidate && !hasNotice) {
     return;
   }
 
-  if (hasImportNotices) {
-    elements.detectedAccountTitle.textContent = "识别提示";
-    elements.detectedAccountDetail.textContent = state.pendingImportNotices.join(" ");
-    elements.addDetectedAccountControl.classList.add("is-hidden");
-    return;
-  }
-
-  if (hasNotice && !hasCandidate) {
-    elements.detectedAccountTitle.textContent = "未识别到账户";
-    elements.detectedAccountDetail.textContent = state.pendingAccountNotice;
+  if (hasNotice) {
+    elements.detectedAccountTitle.textContent = "导入提示";
+    elements.detectedAccountDetail.textContent = [state.pendingAccountNotice, ...pendingNotices]
+      .filter(Boolean)
+      .join("；");
     elements.addDetectedAccountControl.classList.add("is-hidden");
     return;
   }
@@ -1682,7 +1692,10 @@ function appendAlipaySupplement(description, supplement) {
 }
 
 function formatAlipaySkippedNotice(item) {
-  return `支付宝交易已跳过：${item.counterparty || item.paymentMethod || "未知交易"}。`;
+  if (["zero-or-neutral", "zero-amount", "excluded-by-statement"].includes(item?.skipReason)) {
+    return `已跳过不计收支或零金额记录：${item.description || item.paymentMethod || "支付宝记录"}`;
+  }
+  return `已跳过支付宝记录：${item?.description || item?.paymentMethod || "未支持付款方式"}`;
 }
 
 function resolveImportAccountCandidate(candidate) {

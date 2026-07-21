@@ -1278,6 +1278,126 @@ test("shows Alipay reconciliation ambiguity notices without updating existing tr
   }
 });
 
+test("skips unmatched Alipay bank cards without adding transactions", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer();
+  const browser = await chromium.launch({ headless: true, executablePath: edgePath });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: "domcontentloaded" });
+
+    await page.setInputFiles("#fileInput", {
+      name: "alipay-unmatched-card.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(
+        "支付宝支付科技有限公司 交易流水证明\n" +
+          "收/支 交易对方 商品说明 收/付款方式 金额 交易订单号 商家订单号 交易时间\n" +
+          "支出 高德打车 高德打车订单 招商银行信用卡(1755) 14.49 20260324220014662214274 0003N202603240000000014 2026-03-24 21:53:45",
+      ),
+    });
+    await page.click("#importButton");
+    await page.waitForSelector("#detectedAccountPanel:not(.is-hidden)");
+
+    assert.match(await page.locator("#detectedAccountPanel").textContent(), /没有匹配账户/u);
+    assert.equal(await page.locator("#pendingRows tr").count(), 0);
+    assert.equal(await page.locator("#confirmImportButton").isDisabled(), true);
+    assert.deepEqual(
+      await page.evaluate(() => JSON.parse(localStorage.getItem("ai-caiduo-transactions-v1") || "[]")),
+      [],
+    );
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
+test("imports true Alipay balance rows into the selected Alipay account", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer();
+  const browser = await chromium.launch({ headless: true, executablePath: edgePath });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    await page.addInitScript(() => {
+      const RealDate = Date;
+      const frozenTime = new RealDate("2026-03-15T12:00:00.000Z").valueOf();
+      class FrozenDate extends RealDate {
+        constructor(...args) {
+          super(...(args.length ? args : [frozenTime]));
+        }
+
+        static now() {
+          return frozenTime;
+        }
+      }
+      globalThis.Date = FrozenDate;
+    });
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem(
+        "ai-caiduo-accounts-v1",
+        JSON.stringify([{ id: "alipay", name: "支付宝", openingBalance: 100 }]),
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+
+    await page.setInputFiles("#fileInput", {
+      name: "alipay-balance.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(
+        "支付宝支付科技有限公司 交易流水证明\n" +
+          "收/支 交易对方 商品说明 收/付款方式 金额 交易订单号 商家订单号 交易时间\n" +
+          "支出 星巴克 星巴克咖啡 支付宝余额 32.50 20260301220014662214274 A0001 2026-03-01 09:30:00",
+      ),
+    });
+    await page.click("#importButton");
+    await page.waitForSelector("#pendingRows tr");
+    assert.equal(await page.locator("#detectedAccountPanel").isHidden(), true);
+    await page.selectOption("#importAccountInput", "alipay");
+    await page.click("#confirmImportButton");
+    await page.waitForFunction(() =>
+      (document.querySelector("#importStatus")?.textContent || "").includes("已入账"),
+    );
+    const savedTransactions = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ai-caiduo-transactions-v1") || "[]"),
+    );
+    assert.equal(savedTransactions.length, 1);
+    assert.equal(savedTransactions[0].accountId, "alipay");
+    await page.selectOption("#accountFilterInput", "alipay");
+
+    assert.equal(await page.locator("#transactionRows tr").count(), 1);
+    assert.match(await page.locator("#transactionRows tr").first().textContent(), /星巴克/u);
+    assert.match(await page.locator("#transactionRows tr").first().textContent(), /¥67\.50/u);
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
 test("initializes the date range from the local calendar date", async (t) => {
   if (!existsSync(edgePath)) {
     t.skip("Microsoft Edge is not available in this environment");
