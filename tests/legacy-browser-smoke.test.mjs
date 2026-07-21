@@ -1043,6 +1043,97 @@ test("selects multiple transaction rows and displays generic transfer tags", asy
   }
 });
 
+test("annotates matched bank-card transactions from Alipay statements without creating duplicates", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer();
+  const browser = await chromium.launch({ headless: true, executablePath: edgePath });
+
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem(
+        "ai-caiduo-accounts-v1",
+        JSON.stringify([
+          {
+            id: "credit-1755",
+            name: "招商银行信用卡 尾号1755",
+            institution: "招商银行",
+            accountNumberLast4: "1755",
+            accountFingerprint: "cmb-credit-card:1755",
+            openingBalance: 0,
+          },
+          { id: "alipay", name: "支付宝", openingBalance: 0 },
+        ]),
+      );
+      localStorage.setItem(
+        "ai-caiduo-transactions-v1",
+        JSON.stringify([
+          {
+            id: "gaode-card-row",
+            date: "2026-03-24",
+            description: "高德打车",
+            amount: -14.49,
+            direction: "expense",
+            category: "其他支出",
+            accountId: "credit-1755",
+            sequence: 1,
+          },
+        ]),
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+
+    await page.setInputFiles("#fileInput", {
+      name: "alipay-bank-card.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(
+        "支付宝支付科技有限公司 交易流水证明\n" +
+          "收/支 交易对方 商品说明 付款方式 金额 交易订单号 商家订单号 交易时间\n" +
+          "支出 高德打车 高德打车订单 招商银行信用卡(1755) 14.49 20260324220014662214274 0003N202603240000000014 2026-03-24 21:53:45",
+      ),
+    });
+    await page.click("#importButton");
+    await page.waitForFunction(() =>
+      (document.querySelector("#importStatus")?.textContent || "").includes("请确认"),
+    );
+
+    assert.match(await page.locator("#pendingPanel").textContent(), /将补充已有流水/u);
+    assert.equal(await page.locator("#pendingRows tr").count(), 1);
+
+    await page.click("#confirmImportButton");
+    await page.waitForFunction(() =>
+      (document.querySelector("#importStatus")?.textContent || "").includes("补充"),
+    );
+
+    const savedTransactions = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ai-caiduo-transactions-v1") || "[]"),
+    );
+    assert.equal(savedTransactions.length, 1);
+    assert.equal(
+      savedTransactions[0].description,
+      "高德打车；支付宝补充：高德打车 - 高德打车订单",
+    );
+    assert.equal(savedTransactions[0].category, "交通");
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
 test("initializes the date range from the local calendar date", async (t) => {
   if (!existsSync(edgePath)) {
     t.skip("Microsoft Edge is not available in this environment");

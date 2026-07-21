@@ -34,6 +34,8 @@ const state = {
   transactions: loadTransactions(),
   accounts: loadAccounts(),
   pendingTransactions: [],
+  pendingTransactionUpdates: [],
+  pendingImportNotices: [],
   pendingAccountCandidate: null,
   pendingAccountNotice: "",
   pendingAccountMode: "manual",
@@ -210,6 +212,12 @@ function bindEvents() {
   });
 
   elements.pendingRows.addEventListener("click", (event) => {
+    const updateButton = event.target.closest("[data-delete-pending-update-id]");
+    if (updateButton) {
+      deletePendingTransactionUpdate(updateButton.dataset.deletePendingUpdateId);
+      return;
+    }
+
     const button = event.target.closest("[data-delete-pending-id]");
     if (!button) {
       return;
@@ -378,8 +386,14 @@ async function importSelectedFile() {
       fallbackYear: Number(state.startDate.slice(0, 4)),
     });
 
-    if (result.transactions.length === 0) {
+    const hasRecognizedItems =
+      result.transactions.length > 0 ||
+      (result.reconciliationItems || []).length > 0 ||
+      (result.skippedItems || []).length > 0;
+    if (!hasRecognizedItems) {
       state.pendingTransactions = [];
+      state.pendingTransactionUpdates = [];
+      state.pendingImportNotices = [];
       clearPendingAccountCandidate();
       renderPendingImport();
       setImportStatus(result.message || "没有识别到可导入交易");
@@ -391,6 +405,15 @@ async function importSelectedFile() {
       ...applyCategoryRecommendation(transaction, categoryHistory),
       previewId: createId(),
     }));
+    const alipayUpdates = buildAlipayTransactionUpdates(
+      result.reconciliationItems || [],
+      categoryHistory,
+    );
+    state.pendingTransactionUpdates = alipayUpdates.updates;
+    state.pendingImportNotices = [
+      ...alipayUpdates.notices,
+      ...(result.skippedItems || []).map(formatAlipaySkippedNotice),
+    ];
     const accountResolution = resolveImportAccountCandidate(result.accountCandidate);
     state.pendingAccountCandidate = accountResolution.candidate;
     state.pendingAccountNotice = accountResolution.candidate
@@ -409,6 +432,8 @@ async function importSelectedFile() {
     setImportStatus(`${result.message}，请确认后入账`);
   } catch {
     state.pendingTransactions = [];
+    state.pendingTransactionUpdates = [];
+    state.pendingImportNotices = [];
     clearPendingAccountCandidate();
     renderPendingImport();
     setImportStatus("识别失败，请换一个可复制文字的账单文件");
@@ -418,7 +443,7 @@ async function importSelectedFile() {
 }
 
 function confirmPendingImport() {
-  if (state.pendingTransactions.length === 0) {
+  if (!hasPendingImportItems()) {
     setImportStatus("没有待确认交易");
     return;
   }
@@ -440,17 +465,36 @@ function confirmPendingImport() {
   const imported = state.pendingTransactions.map(({ previewId, ...transaction }, index) =>
     withId({ ...transaction, accountId: importAccountId }, baseSequence + index + 1),
   );
-  state.transactions = [...imported, ...state.transactions];
+  const updateById = new Map(
+    state.pendingTransactionUpdates.map((update) => [
+      update.targetId,
+      {
+        description: update.nextDescription,
+        category: update.nextCategory,
+      },
+    ]),
+  );
+  const updatedTransactions = state.transactions.map((transaction) =>
+    updateById.has(transaction.id) ? { ...transaction, ...updateById.get(transaction.id) } : transaction,
+  );
+  state.transactions = [...imported, ...updatedTransactions];
   state.pendingTransactions = [];
+  const updateCount = state.pendingTransactionUpdates.length;
+  state.pendingTransactionUpdates = [];
+  state.pendingImportNotices = [];
   persist();
   clearPendingAccountCandidate();
   clearSelectedFile();
-  setImportStatus(`已入账 ${imported.length} 笔`);
+  setImportStatus(
+    updateCount > 0 ? `已入账 ${imported.length} 笔，补充 ${updateCount} 笔已有流水` : `已入账 ${imported.length} 笔`,
+  );
   render();
 }
 
 function discardPendingImport(message = "") {
   state.pendingTransactions = [];
+  state.pendingTransactionUpdates = [];
+  state.pendingImportNotices = [];
   clearPendingAccountCandidate();
   renderPendingImport();
   setImportStatus(message);
@@ -459,6 +503,13 @@ function discardPendingImport(message = "") {
 function deletePendingTransaction(previewId) {
   state.pendingTransactions = state.pendingTransactions.filter(
     (transaction) => transaction.previewId !== previewId,
+  );
+  renderPendingImport();
+}
+
+function deletePendingTransactionUpdate(previewId) {
+  state.pendingTransactionUpdates = state.pendingTransactionUpdates.filter(
+    (update) => update.previewId !== previewId,
   );
   renderPendingImport();
 }
@@ -784,12 +835,24 @@ function renderTransactions() {
 }
 
 function renderPendingImport() {
-  const hasPending = state.pendingTransactions.length > 0;
-  elements.pendingPanel.classList.toggle("is-hidden", !hasPending);
-  elements.pendingCount.textContent = `${state.pendingTransactions.length} 笔`;
+  const hasPending = hasPendingImportItems();
+  const pendingCount = state.pendingTransactions.length + state.pendingTransactionUpdates.length;
+  elements.pendingPanel.classList.toggle(
+    "is-hidden",
+    !hasPending && state.pendingImportNotices.length === 0,
+  );
+  elements.pendingCount.textContent = `${pendingCount} 笔`;
   elements.confirmImportButton.disabled = !hasPending;
-  replaceChildrenCompat(elements.pendingRows, ...state.pendingTransactions.map(createPendingRow));
+  replaceChildrenCompat(
+    elements.pendingRows,
+    ...state.pendingTransactions.map(createPendingRow),
+    ...state.pendingTransactionUpdates.map(createPendingUpdateRow),
+  );
   renderDetectedAccountPanel();
+}
+
+function hasPendingImportItems() {
+  return state.pendingTransactions.length > 0 || state.pendingTransactionUpdates.length > 0;
 }
 
 function renderDetectedAccountPanel() {
@@ -1199,6 +1262,22 @@ function createPendingRow(transaction) {
   return row;
 }
 
+function createPendingUpdateRow(update) {
+  const row = document.createElement("tr");
+  row.innerHTML = `
+    <td data-label="日期">${escapeHtml(update.date)}</td>
+    <td data-label="说明">${escapeHtml(`将补充已有流水：${update.nextDescription}`)}</td>
+    <td data-label="分类">${escapeHtml(update.nextCategory || update.category)}</td>
+    <td data-label="金额" class="amount-cell">${escapeHtml(formatSignedMoney(update.amount))}</td>
+    <td data-label="操作" class="action-cell">
+      <button class="delete-button" type="button" data-delete-pending-update-id="${escapeHtml(
+        update.previewId,
+      )}">删除</button>
+    </td>
+  `;
+  return row;
+}
+
 function getVisibleTransactions() {
   return filterLedgerTransactions(state.transactions, {
     startDate: state.startDate,
@@ -1362,6 +1441,181 @@ function normalizeAccount(account) {
   };
 }
 
+function buildAlipayTransactionUpdates(reconciliationItems, categoryHistory) {
+  const updates = [];
+  const notices = [];
+
+  for (const item of reconciliationItems || []) {
+    const account = findAccountForPaymentCandidate(item.paymentAccountCandidate);
+    if (!account) {
+      notices.push(
+        `识别到${item.paymentAccountCandidate?.displayName || item.paymentMethod}，但本地没有匹配账户，已跳过。`,
+      );
+      continue;
+    }
+
+    const match = findExistingTransactionForAlipayItem(item, account.id);
+    if (match.status !== "matched") {
+      notices.push(match.message);
+      continue;
+    }
+
+    const supplement = buildAlipaySupplement(item);
+    const type = getTransactionType(match.transaction);
+    const recommendation = recommendCategory(`${item.counterparty} ${item.product}`, {
+      type,
+      history: categoryHistory,
+    });
+    const nextCategory =
+      isFallbackCategory(match.transaction.category, type) &&
+      recommendation.confidence === "high" &&
+      (recommendation.source === "rule" || recommendation.source === "user-history")
+        ? recommendation.category
+        : normalizeTransactionCategory(
+            match.transaction.category,
+            type,
+            match.transaction.description,
+          );
+
+    updates.push({
+      previewId: createId(),
+      targetId: match.transaction.id,
+      date: item.date,
+      description: match.transaction.description,
+      nextDescription: appendAlipaySupplement(match.transaction.description, supplement),
+      amount: match.transaction.amount,
+      direction: match.transaction.direction,
+      category: match.transaction.category,
+      nextCategory,
+      supplement,
+      paymentMethod: item.paymentMethod,
+    });
+  }
+
+  return { updates, notices };
+}
+
+function findAccountForPaymentCandidate(candidate) {
+  if (!candidate) {
+    return null;
+  }
+
+  const fingerprint = String(candidate.accountFingerprint || "").trim();
+  if (fingerprint) {
+    const exact = state.accounts.find((account) => account.accountFingerprint === fingerprint);
+    if (exact) {
+      return exact;
+    }
+  }
+
+  const suffix = String(candidate.accountNumberLast4 || "").trim();
+  if (!suffix) {
+    return null;
+  }
+
+  return (
+    state.accounts.find((account) =>
+      String(account.accountNumberLast4 || "")
+        .split("/")
+        .includes(suffix),
+    ) ||
+    state.accounts.find((account) => {
+      const name = String(account.name || "");
+      return name.includes(suffix) && (!candidate.institution || name.includes(candidate.institution));
+    }) ||
+    null
+  );
+}
+
+function findExistingTransactionForAlipayItem(item, accountId) {
+  const candidates = state.transactions.filter((transaction) => {
+    const type = getTransactionType(transaction);
+    if (type === "transfer" || type === "refunded") {
+      return false;
+    }
+    return (
+      transaction.accountId === accountId &&
+      transaction.date === item.date &&
+      roundMoney(Math.abs(transaction.amount)) === roundMoney(Math.abs(item.amount)) &&
+      getTransactionType(transaction) === item.direction
+    );
+  });
+
+  if (candidates.length === 0) {
+    return {
+      status: "missing",
+      message: `未找到可补充的已有流水：${item.paymentAccountCandidate?.displayName || item.paymentMethod} ${item.date} ${formatMoney(Math.abs(item.amount))}，已跳过。`,
+    };
+  }
+
+  if (candidates.length === 1) {
+    return { status: "matched", transaction: candidates[0] };
+  }
+
+  const scored = candidates
+    .map((transaction) => ({ transaction, score: scoreAlipayDescriptionMatch(transaction, item) }))
+    .sort((a, b) => b.score - a.score);
+  if (scored[0].score > 0 && scored[0].score > scored[1].score) {
+    return { status: "matched", transaction: scored[0].transaction };
+  }
+
+  return {
+    status: "ambiguous",
+    message: `找到多条可能匹配的已有流水：${item.paymentAccountCandidate?.displayName || item.paymentMethod} ${item.date} ${formatMoney(Math.abs(item.amount))}，已跳过。`,
+  };
+}
+
+function scoreAlipayDescriptionMatch(transaction, item) {
+  const description = normalizeAlipayMatchText(transaction.description);
+  if (!description) {
+    return 0;
+  }
+
+  const candidates = [item.counterparty, item.product]
+    .map(normalizeAlipayMatchText)
+    .filter(Boolean);
+  let score = 0;
+  for (const candidate of candidates) {
+    if (description.includes(candidate) || candidate.includes(description)) {
+      score += candidate.length;
+      continue;
+    }
+
+    const descriptionTokens = new Set(description.split(/\s+/u));
+    const candidateTokens = candidate.split(/\s+/u);
+    score += candidateTokens.filter((token) => token && descriptionTokens.has(token)).length;
+  }
+  return score;
+}
+
+function normalizeAlipayMatchText(value) {
+  return String(value || "")
+    .toLocaleLowerCase("zh-CN")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function buildAlipaySupplement(item) {
+  return [item.counterparty, item.product]
+    .map((part) => String(part || "").replace(/\s+/gu, " ").trim())
+    .filter(Boolean)
+    .filter((part, index, parts) => parts.indexOf(part) === index)
+    .join(" - ");
+}
+
+function appendAlipaySupplement(description, supplement) {
+  const cleanSupplement = String(supplement || "").replace(/\s+/gu, " ").trim();
+  const original = String(description || "").trim();
+  if (!cleanSupplement || original.includes(`支付宝补充：${cleanSupplement}`)) {
+    return original;
+  }
+  return `${original}；支付宝补充：${cleanSupplement}`;
+}
+
+function formatAlipaySkippedNotice(item) {
+  return `支付宝交易已跳过：${item.counterparty || item.paymentMethod || "未知交易"}。`;
+}
+
 function resolveImportAccountCandidate(candidate) {
   if (!candidate) {
     return { mode: "manual", accountId: "", candidate: null };
@@ -1481,6 +1735,8 @@ function clearSelectedFile() {
 }
 
 function clearPendingAccountCandidate() {
+  state.pendingTransactionUpdates = [];
+  state.pendingImportNotices = [];
   state.pendingAccountCandidate = null;
   state.pendingAccountNotice = "";
   state.pendingAccountMode = "manual";
