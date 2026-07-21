@@ -30,9 +30,10 @@ export async function analyzeLedgerFile(file, options = {}) {
   const localResult = parseLocalStatementText(extractedText, { fallbackYear });
   const localReconciliationItems = localResult.reconciliationItems || [];
   const localSkippedItems = localResult.skippedItems || [];
+  const isAlipayStatement = ALIPAY_STATEMENT_PATTERN.test(extractedText);
   const hasAlipayReviewItems = localReconciliationItems.length > 0 || localSkippedItems.length > 0;
 
-  if (options.endpoint && !hasAlipayReviewItems) {
+  if (options.endpoint && !isAlipayStatement && !hasAlipayReviewItems) {
     try {
       const aiTransactions = await analyzeWithEndpoint(file, extractedText, options);
       if (aiTransactions.length > 0) {

@@ -314,6 +314,54 @@ test("returns Alipay reconciliation and skipped items even when AI endpoint is c
   }
 });
 
+test("guards Alipay balance-only files from AI endpoint replacement", async () => {
+  const endpoint = await startJsonEndpoint({
+    transactions: [
+      {
+        date: "2026-03-01",
+        description: "AI must not bypass Alipay payment-method safeguards",
+        amount: "999.00",
+      },
+    ],
+  });
+  const file = new File(
+    [`支付宝支付科技有限公司 交易流水证明
+支出 星巴克 星巴克咖啡店 支付宝余额 32.50 order merchant 2026-03-01 09:30:00`],
+    "alipay-balance-only.txt",
+    { type: "text/plain" },
+  );
+
+  try {
+    const result = await analyzeLedgerFile(file, {
+      endpoint: endpoint.url,
+      fallbackYear: 2026,
+    });
+
+    assert.equal(result.mode, "local");
+    assert.deepEqual(
+      result.transactions.map(({ date, description, amount, source }) => ({
+        date,
+        description,
+        amount,
+        source,
+      })),
+      [
+        {
+          date: "2026-03-01",
+          description: "星巴克 - 星巴克咖啡店",
+          amount: -32.5,
+          source: "file",
+        },
+      ],
+    );
+    assert.equal(result.reconciliationItems.length, 0);
+    assert.equal(result.skippedItems.length, 0);
+    assert.equal(endpoint.requests.length, 0);
+  } finally {
+    await endpoint.close();
+  }
+});
+
 test("normalizes transactions returned by an AI import endpoint", async () => {
   const endpoint = await startJsonEndpoint({
     transactions: [
