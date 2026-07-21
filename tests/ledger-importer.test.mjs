@@ -165,6 +165,39 @@ test("classifies all supported Alipay balance labels", () => {
   }
 });
 
+test("preserves wrapped Alipay rows with unsupported payment methods as skipped items", () => {
+  const result = parseAlipayStatement(`支付宝支付科技有限公司 交易流水证明
+支出
+甲方
+商品
+微信支付
+12.00
+order merchant
+2026-03-03 09:30:00`);
+
+  assert.equal(result.transactions.length, 0);
+  assert.deepEqual(
+    result.skippedItems.map(({ date, counterparty, product, paymentMethod, amount, skipReason }) => ({
+      date,
+      counterparty,
+      product,
+      paymentMethod,
+      amount,
+      skipReason,
+    })),
+    [
+      {
+        date: "2026-03-03",
+        counterparty: "甲方",
+        product: "商品",
+        paymentMethod: "微信支付",
+        amount: -12,
+        skipReason: "unsupported-payment-method",
+      },
+    ],
+  );
+});
+
 test("analyzes a local statement text file with fallback parsing", async () => {
   const file = new File(
     [
@@ -243,6 +276,42 @@ test("analyzes a local statement text file with fallback parsing", async () => {
       },
     ],
   );
+});
+
+test("returns Alipay reconciliation and skipped items even when AI endpoint is configured", async () => {
+  const endpoint = await startJsonEndpoint({
+    transactions: [
+      {
+        date: "2026-03-24",
+        description: "AI must not create bank-card row",
+        amount: "14.49",
+      },
+    ],
+  });
+  const file = new File(
+    [`支付宝支付科技有限公司 交易流水证明
+支出 高德打车 高德打车订单 招商银行信用卡(1755) 14.49 order merchant 2026-03-24 21:53:45
+支出 上海顺途科技有限公司 退款 微信支付 317.50 order merchant 2026-03-31 00:08:52`],
+    "alipay-statement.txt",
+    { type: "text/plain" },
+  );
+
+  try {
+    const result = await analyzeLedgerFile(file, {
+      endpoint: endpoint.url,
+      fallbackYear: 2026,
+    });
+
+    assert.equal(result.mode, "local");
+    assert.equal(result.transactions.length, 0);
+    assert.equal(result.reconciliationItems.length, 1);
+    assert.equal(result.skippedItems.length, 1);
+    assert.equal(result.reconciliationItems[0].paymentMethod, "招商银行信用卡(1755)");
+    assert.equal(result.skippedItems[0].skipReason, "unsupported-payment-method");
+    assert.equal(endpoint.requests.length, 0);
+  } finally {
+    await endpoint.close();
+  }
 });
 
 test("normalizes transactions returned by an AI import endpoint", async () => {

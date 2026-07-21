@@ -28,14 +28,19 @@ export async function analyzeLedgerFile(file, options = {}) {
   const fallbackYear = Number(options.fallbackYear) || new Date().getFullYear();
   const extractedText = await extractTextFromFile(file);
   const localResult = parseLocalStatementText(extractedText, { fallbackYear });
+  const localReconciliationItems = localResult.reconciliationItems || [];
+  const localSkippedItems = localResult.skippedItems || [];
+  const hasAlipayReviewItems = localReconciliationItems.length > 0 || localSkippedItems.length > 0;
 
-  if (options.endpoint) {
+  if (options.endpoint && !hasAlipayReviewItems) {
     try {
       const aiTransactions = await analyzeWithEndpoint(file, extractedText, options);
       if (aiTransactions.length > 0) {
         return {
           transactions: aiTransactions,
           accountCandidate: localResult.accountCandidate,
+          reconciliationItems: localReconciliationItems,
+          skippedItems: localSkippedItems,
           mode: "ai",
           message: "AI 已生成预览",
         };
@@ -47,10 +52,12 @@ export async function analyzeLedgerFile(file, options = {}) {
 
   const localTransactions = localResult.transactions;
 
-  if (localTransactions.length > 0) {
+  if (localTransactions.length > 0 || hasAlipayReviewItems) {
     return {
       transactions: localTransactions,
       accountCandidate: localResult.accountCandidate,
+      reconciliationItems: localReconciliationItems,
+      skippedItems: localSkippedItems,
       mode: "local",
       message: "已使用本地解析生成预览",
     };
@@ -58,6 +65,9 @@ export async function analyzeLedgerFile(file, options = {}) {
 
   return {
     transactions: [],
+    reconciliationItems: localReconciliationItems,
+    skippedItems: localSkippedItems,
+    accountCandidate: localResult.accountCandidate,
     mode: options.endpoint ? "empty" : "needs-ai-backend",
     message:
       file.type === PDF_TYPE || getFileExtension(file.name) === ".pdf"
@@ -219,6 +229,8 @@ function parseAlipayRows(text) {
         rows.push(parseAlipayBlock(block));
       }
       block = [line];
+    } else if (block.length === 0 && line.split(/\s+/u).length === 1 && line.length <= 4) {
+      block = [line];
     } else if (block.length > 0) {
       block.push(line);
     }
@@ -250,18 +262,28 @@ function parseAlipayBlock(block) {
   const dateMatch = clean.match(/(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}:\d{2}))?/u);
   const amountMatches = [...clean.matchAll(/[-+]?\d[\d,]*\.\d{2}/gu)];
   const methodMatch = clean.match(/(支付宝余额|支付宝|余额|[^\s]+银行[^\s]+(?:信用卡|储蓄卡|银行卡)?(?:[（(]\d{4}[）)])?)/u);
-  if (!dateMatch || amountMatches.length === 0 || !methodMatch) {
+  if (!dateMatch || amountMatches.length === 0) {
     return null;
   }
 
   const statusMatch = clean.match(/^(支出|收入|不计\s*收支)\s+/u);
-  const beforeMethod = clean.slice(statusMatch ? statusMatch[0].length : 0, methodMatch.index).trim();
+  const rowStart = statusMatch ? statusMatch[0].length : 0;
+  const amountIndex = amountMatches[0].index;
+  const fieldsBeforeAmount = clean.slice(rowStart, amountIndex).trim().split(/\s+/u).filter(Boolean);
+  if (!methodMatch && fieldsBeforeAmount.length < 3) {
+    return null;
+  }
+
+  const beforeMethod = methodMatch
+    ? clean.slice(rowStart, methodMatch.index).trim()
+    : fieldsBeforeAmount.slice(0, -1).join(" ");
   const fields = beforeMethod.split(/\s+/u).filter(Boolean);
+  const paymentMethod = methodMatch ? methodMatch[1] : fieldsBeforeAmount.at(-1);
   return buildAlipayRow({
     status: statusMatch ? statusMatch[1] : "支出",
     counterparty: fields[0] || "",
     product: fields.slice(1).join(" "),
-    paymentMethod: methodMatch[1],
+    paymentMethod,
     amount: amountMatches[amountMatches.length - 1][0],
     date: dateMatch[1],
     time: dateMatch[2],
