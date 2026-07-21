@@ -1457,6 +1457,52 @@ test("requires an account before confirming true Alipay balance rows", async (t)
   }
 });
 
+test("allows non-Alipay imports to remain unassigned", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer();
+  const browser = await chromium.launch({ headless: true, executablePath: edgePath });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => localStorage.clear());
+    await page.reload({ waitUntil: "domcontentloaded" });
+
+    await page.setInputFiles("#fileInput", {
+      name: "generic-ledger.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("2026-03-01 手动未分配导入 -12.00"),
+    });
+    await page.click("#importButton");
+    await page.waitForSelector("#pendingRows tr");
+    await page.selectOption("#importAccountInput", "__unassigned__");
+    await page.click("#confirmImportButton");
+    await page.waitForFunction(() =>
+      (document.querySelector("#importStatus")?.textContent || "").includes("已入账"),
+    );
+
+    const savedTransactions = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ai-caiduo-transactions-v1") || "[]"),
+    );
+    assert.equal(savedTransactions.length, 1);
+    assert.equal(savedTransactions[0].accountId, undefined);
+    assert.match(savedTransactions[0].description, /手动未分配导入/u);
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
 test("does not annotate a single unrelated Alipay bank-card transaction", async (t) => {
   if (!existsSync(edgePath)) {
     t.skip("Microsoft Edge is not available in this environment");

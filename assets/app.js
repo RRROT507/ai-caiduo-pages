@@ -40,6 +40,7 @@ const state = {
   pendingAccountNotice: "",
   pendingAccountMode: "manual",
   pendingMatchedAccountId: "",
+  pendingRequiresAccountSelection: false,
   selectedFile: null,
   startDate: getCurrentMonthStartDate(),
   endDate: getToday(),
@@ -435,6 +436,11 @@ async function importSelectedFile() {
             : "未识别到账户，请手动选择入账账户";
     state.pendingAccountMode = accountResolution.mode;
     state.pendingMatchedAccountId = accountResolution.accountId;
+    state.pendingRequiresAccountSelection = Boolean(
+      isAlipayStatement &&
+      state.pendingTransactions.length > 0 &&
+      !findExistingAlipayAccountId(),
+    );
 
     if (accountResolution.mode === "matched") {
       elements.importAccountInput.value = accountResolution.accountId;
@@ -475,6 +481,7 @@ function confirmPendingImport() {
   if (
     state.pendingTransactions.length > 0 &&
     selectedImportAccountId === UNASSIGNED_ACCOUNT_ID &&
+    state.pendingRequiresAccountSelection &&
     !shouldCreateDetectedAccount
   ) {
     setImportStatus("请选择入账账户后再确认");
@@ -507,6 +514,7 @@ function confirmPendingImport() {
   const updateCount = state.pendingTransactionUpdates.length;
   state.pendingTransactionUpdates = [];
   state.pendingImportNotices = [];
+  state.pendingRequiresAccountSelection = false;
   persist();
   clearPendingAccountCandidate();
   clearSelectedFile();
@@ -520,6 +528,7 @@ function discardPendingImport(message = "") {
   state.pendingTransactions = [];
   state.pendingTransactionUpdates = [];
   state.pendingImportNotices = [];
+  state.pendingRequiresAccountSelection = false;
   clearPendingAccountCandidate();
   renderPendingImport();
   setImportStatus(message);
@@ -1849,6 +1858,7 @@ function clearPendingAccountCandidate() {
   state.pendingAccountNotice = "";
   state.pendingAccountMode = "manual";
   state.pendingMatchedAccountId = "";
+  state.pendingRequiresAccountSelection = false;
 }
 
 function setImportStatus(message) {
