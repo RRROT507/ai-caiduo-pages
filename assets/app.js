@@ -859,8 +859,19 @@ function renderDetectedAccountPanel() {
   const candidate = state.pendingAccountCandidate;
   const hasCandidate = Boolean(candidate && state.pendingTransactions.length > 0);
   const hasNotice = Boolean(state.pendingAccountNotice && state.pendingTransactions.length > 0);
-  elements.detectedAccountPanel.classList.toggle("is-hidden", !hasCandidate && !hasNotice);
-  if (!hasCandidate && !hasNotice) {
+  const hasImportNotices = state.pendingImportNotices.length > 0;
+  elements.detectedAccountPanel.classList.toggle(
+    "is-hidden",
+    !hasCandidate && !hasNotice && !hasImportNotices,
+  );
+  if (!hasCandidate && !hasNotice && !hasImportNotices) {
+    return;
+  }
+
+  if (hasImportNotices) {
+    elements.detectedAccountTitle.textContent = "识别提示";
+    elements.detectedAccountDetail.textContent = state.pendingImportNotices.join(" ");
+    elements.addDetectedAccountControl.classList.add("is-hidden");
     return;
   }
 
@@ -1446,15 +1457,13 @@ function buildAlipayTransactionUpdates(reconciliationItems, categoryHistory) {
   const notices = [];
 
   for (const item of reconciliationItems || []) {
-    const account = findAccountForPaymentCandidate(item.paymentAccountCandidate);
-    if (!account) {
-      notices.push(
-        `识别到${item.paymentAccountCandidate?.displayName || item.paymentMethod}，但本地没有匹配账户，已跳过。`,
-      );
+    const accountMatch = findAccountForPaymentCandidate(item.paymentAccountCandidate);
+    if (accountMatch.status !== "matched") {
+      notices.push(accountMatch.message);
       continue;
     }
 
-    const match = findExistingTransactionForAlipayItem(item, account.id);
+    const match = findExistingTransactionForAlipayItem(item, accountMatch.account.id);
     if (match.status !== "matched") {
       notices.push(match.message);
       continue;
@@ -1492,39 +1501,87 @@ function buildAlipayTransactionUpdates(reconciliationItems, categoryHistory) {
     });
   }
 
-  return { updates, notices };
+  const updatesByTargetId = new Map();
+  for (const update of updates) {
+    const targetUpdates = updatesByTargetId.get(update.targetId) || [];
+    targetUpdates.push(update);
+    updatesByTargetId.set(update.targetId, targetUpdates);
+  }
+
+  const conflictingTargetIds = new Set();
+  for (const [targetId, targetUpdates] of updatesByTargetId) {
+    if (targetUpdates.length > 1) {
+      conflictingTargetIds.add(targetId);
+      notices.push(
+        `多条支付宝记录重复指向同一已有流水：${targetUpdates[0].date} ${formatMoney(
+          Math.abs(targetUpdates[0].amount),
+        )}，已跳过。`,
+      );
+    }
+  }
+
+  return {
+    updates: updates.filter((update) => !conflictingTargetIds.has(update.targetId)),
+    notices,
+  };
 }
 
 function findAccountForPaymentCandidate(candidate) {
+  const displayName = candidate?.displayName || candidate?.accountNumberLast4 || "该付款方式";
   if (!candidate) {
-    return null;
+    return { status: "missing", message: "未识别到银行卡付款方式，已跳过。" };
   }
 
   const fingerprint = String(candidate.accountFingerprint || "").trim();
   if (fingerprint) {
-    const exact = state.accounts.find((account) => account.accountFingerprint === fingerprint);
-    if (exact) {
-      return exact;
+    const exactMatches = state.accounts.filter((account) => account.accountFingerprint === fingerprint);
+    if (exactMatches.length === 1) {
+      return { status: "matched", account: exactMatches[0] };
+    }
+    if (exactMatches.length > 1) {
+      return {
+        status: "ambiguous",
+        message: `识别到${displayName}，但匹配到多个账户，已跳过。`,
+      };
     }
   }
 
   const suffix = String(candidate.accountNumberLast4 || "").trim();
   if (!suffix) {
-    return null;
+    return {
+      status: "missing",
+      message: `识别到${displayName}，但本地没有匹配账户，已跳过。`,
+    };
   }
 
-  return (
-    state.accounts.find((account) =>
-      String(account.accountNumberLast4 || "")
-        .split("/")
-        .includes(suffix),
-    ) ||
-    state.accounts.find((account) => {
+  const matchesById = new Map();
+  for (const account of state.accounts) {
+    const hasSuffix = String(account.accountNumberLast4 || "")
+      .split("/")
+      .includes(suffix);
+    const hasMatchingName = (() => {
       const name = String(account.name || "");
       return name.includes(suffix) && (!candidate.institution || name.includes(candidate.institution));
-    }) ||
-    null
-  );
+    })();
+    if (hasSuffix || hasMatchingName) {
+      matchesById.set(account.id, account);
+    }
+  }
+
+  const matches = [...matchesById.values()];
+  if (matches.length === 1) {
+    return { status: "matched", account: matches[0] };
+  }
+  if (matches.length > 1) {
+    return {
+      status: "ambiguous",
+      message: `识别到${displayName}，但匹配到多个账户，已跳过。`,
+    };
+  }
+  return {
+    status: "missing",
+    message: `识别到${displayName}，但本地没有匹配账户，已跳过。`,
+  };
 }
 
 function findExistingTransactionForAlipayItem(item, accountId) {
@@ -1555,13 +1612,14 @@ function findExistingTransactionForAlipayItem(item, accountId) {
   const scored = candidates
     .map((transaction) => ({ transaction, score: scoreAlipayDescriptionMatch(transaction, item) }))
     .sort((a, b) => b.score - a.score);
-  if (scored[0].score > 0 && scored[0].score > scored[1].score) {
+  const scoreMargin = scored[0].score - scored[1].score;
+  if (scored[0].score >= 100 && scoreMargin >= 25) {
     return { status: "matched", transaction: scored[0].transaction };
   }
 
   return {
     status: "ambiguous",
-    message: `找到多条可能匹配的已有流水：${item.paymentAccountCandidate?.displayName || item.paymentMethod} ${item.date} ${formatMoney(Math.abs(item.amount))}，已跳过。`,
+    message: `找到多条可能匹配的已有流水，但描述匹配不够明确：${item.paymentAccountCandidate?.displayName || item.paymentMethod} ${item.date} ${formatMoney(Math.abs(item.amount))}，已跳过。`,
   };
 }
 
@@ -1576,14 +1634,25 @@ function scoreAlipayDescriptionMatch(transaction, item) {
     .filter(Boolean);
   let score = 0;
   for (const candidate of candidates) {
-    if (description.includes(candidate) || candidate.includes(description)) {
-      score += candidate.length;
+    if (description === candidate) {
+      score = Math.max(score, 200 + candidate.length);
+      continue;
+    }
+    if (description.includes(candidate) && candidate.length >= 4) {
+      score = Math.max(score, 160 + candidate.length);
+      continue;
+    }
+    if (candidate.includes(description) && description.length >= 4) {
+      score = Math.max(score, 120 + description.length);
       continue;
     }
 
     const descriptionTokens = new Set(description.split(/\s+/u));
     const candidateTokens = candidate.split(/\s+/u);
-    score += candidateTokens.filter((token) => token && descriptionTokens.has(token)).length;
+    score = Math.max(
+      score,
+      candidateTokens.filter((token) => token && descriptionTokens.has(token)).length,
+    );
   }
   return score;
 }

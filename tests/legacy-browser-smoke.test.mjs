@@ -1134,6 +1134,150 @@ test("annotates matched bank-card transactions from Alipay statements without cr
   }
 });
 
+test("shows Alipay reconciliation ambiguity notices without updating existing transactions", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer();
+  const browser = await chromium.launch({ headless: true, executablePath: edgePath });
+  const statementHeader =
+    "支付宝支付科技有限公司 交易流水证明\n" +
+    "收/支 交易对方 商品说明 收/付款方式 金额 交易订单号 商家订单号 交易时间\n";
+  const statementRow =
+    "支出 高德打车 高德打车订单 招商银行信用卡(1755) 14.49 20260324220014662214274 0003N202603240000000014 2026-03-24 21:53:45";
+
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem(
+        "ai-caiduo-accounts-v1",
+        JSON.stringify([
+          { id: "credit-a", name: "招商银行信用卡 尾号1755", accountNumberLast4: "1755" },
+          { id: "credit-b", name: "招商银行信用卡 备用1755", accountNumberLast4: "1755" },
+        ]),
+      );
+      localStorage.setItem(
+        "ai-caiduo-transactions-v1",
+        JSON.stringify([
+          {
+            id: "gaode-card-row",
+            date: "2026-03-24",
+            description: "高德打车",
+            amount: -14.49,
+            direction: "expense",
+            category: "其他支出",
+            accountId: "credit-a",
+            sequence: 1,
+          },
+        ]),
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.setInputFiles("#fileInput", {
+      name: "ambiguous-account.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(statementHeader + statementRow),
+    });
+    await page.click("#importButton");
+    await page.waitForFunction(() =>
+      (document.querySelector("#detectedAccountPanel")?.textContent || "").includes("匹配到多个账户"),
+    );
+    assert.equal(await page.locator("#pendingRows tr").count(), 0);
+    assert.match(await page.locator("#detectedAccountPanel").textContent(), /匹配到多个账户/u);
+
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "ai-caiduo-accounts-v1",
+        JSON.stringify([{ id: "credit-1755", name: "招商银行信用卡 尾号1755", accountNumberLast4: "1755" }]),
+      );
+      localStorage.setItem(
+        "ai-caiduo-transactions-v1",
+        JSON.stringify([
+          {
+            id: "weak-match",
+            date: "2026-03-24",
+            description: "高德",
+            amount: -14.49,
+            direction: "expense",
+            category: "其他支出",
+            accountId: "credit-1755",
+            sequence: 1,
+          },
+          {
+            id: "other-match",
+            date: "2026-03-24",
+            description: "滴滴",
+            amount: -14.49,
+            direction: "expense",
+            category: "其他支出",
+            accountId: "credit-1755",
+            sequence: 2,
+          },
+        ]),
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.setInputFiles("#fileInput", {
+      name: "weak-description-match.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(statementHeader + statementRow),
+    });
+    await page.click("#importButton");
+    await page.waitForFunction(() =>
+      (document.querySelector("#detectedAccountPanel")?.textContent || "").includes("描述匹配不够明确"),
+    );
+    assert.equal(await page.locator("#pendingRows tr").count(), 0);
+    assert.match(await page.locator("#detectedAccountPanel").textContent(), /描述匹配不够明确/u);
+
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "ai-caiduo-transactions-v1",
+        JSON.stringify([
+          {
+            id: "gaode-card-row",
+            date: "2026-03-24",
+            description: "高德打车",
+            amount: -14.49,
+            direction: "expense",
+            category: "其他支出",
+            accountId: "credit-1755",
+            sequence: 1,
+          },
+        ]),
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.setInputFiles("#fileInput", {
+      name: "duplicate-target.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(statementHeader + statementRow + "\n" + statementRow.replace("14274", "14275")),
+    });
+    await page.click("#importButton");
+    await page.waitForFunction(() =>
+      (document.querySelector("#detectedAccountPanel")?.textContent || "").includes("重复指向同一已有流水"),
+    );
+    assert.equal(await page.locator("#pendingRows tr").count(), 0);
+    assert.match(await page.locator("#detectedAccountPanel").textContent(), /重复指向同一已有流水/u);
+    assert.equal(await page.locator("#confirmImportButton").isDisabled(), true);
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
 test("initializes the date range from the local calendar date", async (t) => {
   if (!existsSync(edgePath)) {
     t.skip("Microsoft Edge is not available in this environment");
