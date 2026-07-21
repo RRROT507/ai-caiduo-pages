@@ -79,11 +79,15 @@ test("parses wrapped Alipay payment methods from PDF text", () => {
 支出 山东高速信联 ETC通行费 招商银行信用 4.75 20260331220014662214106 20260331112780012200089 2026-03-31
 科技股份有限 卡(1755) 53640 14676_1 21:22:06
 公司
+支出 国网北京市电 电费自动缴费- 招商银行信用 100.00 20260330000030012200052 1101082389449 2026-03-30
+力公司 **2号-金辰府-根 卡(1755) 67705 12:08:41
+据每期出账后自动
+缴费
 不计 上海顺途科技 退款-北京丰台运 招商银行信用 317.50 20260311230014662214193 20260311ALPP00101750541 2026-03-31
 收支 有限公司 城北 卡(1755) 49019_20260331ALRP00295 0 00:08:52`);
 
   assert.equal(result.transactions.length, 0);
-  assert.equal(result.reconciliationItems.length, 1);
+  assert.equal(result.reconciliationItems.length, 2);
   assert.equal(result.skippedItems.length, 1);
   assert.deepEqual(
     result.reconciliationItems.map(({ date, paymentMethod, paymentAccountCandidate }) => ({
@@ -94,6 +98,17 @@ test("parses wrapped Alipay payment methods from PDF text", () => {
     [
       {
         date: "2026-03-31",
+        paymentMethod: "招商银行信用卡(1755)",
+        paymentAccountCandidate: {
+          institution: "招商银行",
+          accountKind: "credit-card",
+          accountNumberLast4: "1755",
+          accountFingerprint: "cmb-credit-card:1755",
+          displayName: "招商银行信用卡 尾号1755",
+        },
+      },
+      {
+        date: "2026-03-30",
         paymentMethod: "招商银行信用卡(1755)",
         paymentAccountCandidate: {
           institution: "招商银行",

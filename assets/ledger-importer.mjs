@@ -323,7 +323,7 @@ function completeAlipayPaymentMethod(paymentMethod, rowText) {
     ? String(rowText || "").slice(methodIndex + normalizedMethod.length)
     : String(rowText || "");
   const continuationMatch = tail.match(
-    /^\s+[-+]?\d[\d,]*\.\d{2}\s+\S+\s+\S+\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2}:\d{2})?\s+(?:\S+\s+){0,3}(卡[（(]\d{4}[）)])\s+\S+\s+\S+\s+\d{2}:\d{2}:\d{2}(?:\s+\S+)*$/u,
+    /^\s+[-+]?\d[\d,]*\.\d{2}\s+\S+\s+\S+\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2}:\d{2})?\s+(?:\S+\s+){0,3}(卡[（(]\d{4}[）)])\s+(?:\S+\s+){1,2}\d{2}:\d{2}:\d{2}(?:\s+\S+)*$/u,
   );
   if (!continuationMatch) {
     return normalizedMethod;
