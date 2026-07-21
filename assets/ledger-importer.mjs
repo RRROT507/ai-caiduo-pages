@@ -14,6 +14,7 @@ const CMB_INSTITUTION = "招商银行";
 const CMB_TRANSACTION_STATEMENT_PATTERN =
   /招商银行交易流水|Transaction Statement of China Merchants Bank/u;
 const CMB_CREDIT_CARD_PATTERN = /招商银行信用卡对账单|CMB Credit Card Statement/u;
+const ALIPAY_STATEMENT_PATTERN = /支付宝支付科技有限公司|交易流水证明|收\/付款方式/u;
 
 export async function analyzeLedgerFile(file, options = {}) {
   if (!file) {
@@ -115,6 +116,10 @@ function parseLocalStatementText(text, options) {
     return { transactions: [], accountCandidate: null };
   }
 
+  if (ALIPAY_STATEMENT_PATTERN.test(text)) {
+    return parseAlipayStatement(text, options);
+  }
+
   if (CMB_TRANSACTION_STATEMENT_PATTERN.test(text)) {
     return parseCmbTransactionStatement(text);
   }
@@ -132,6 +137,191 @@ function parseLocalStatementText(text, options) {
     ),
     accountCandidate: null,
   };
+}
+
+export function classifyAlipayPaymentMethod(methodText) {
+  const normalizedMethod = normalizeAlipayCell(methodText);
+  if (!normalizedMethod) {
+    return { scope: "unknown", normalizedMethod, candidate: null };
+  }
+
+  if (/^(?:支付宝|支付宝余额|余额)$/u.test(normalizedMethod)) {
+    return { scope: "alipay-account", normalizedMethod, candidate: null };
+  }
+
+  const suffixMatch = normalizedMethod.match(/[（(](\d{4})[）)]/u);
+  const accountNumberLast4 = suffixMatch ? suffixMatch[1] : "";
+  if (/银行|信用卡|储蓄卡|银行卡/u.test(normalizedMethod)) {
+    const institution = normalizedMethod.includes("招商银行") ? "招商银行" : "";
+    const accountKind = normalizedMethod.includes("信用卡") ? "credit-card" : "bank-card";
+    const prefix = institution === "招商银行" && accountKind === "credit-card" ? "cmb-credit-card" : "bank-card";
+    return {
+      scope: "bank-account",
+      normalizedMethod,
+      candidate: {
+        institution,
+        accountKind,
+        accountNumberLast4,
+        accountFingerprint: accountNumberLast4 ? `${prefix}:${accountNumberLast4}` : "",
+        displayName: `${institution || "银行卡"}${accountKind === "credit-card" ? "信用卡" : ""}${
+          accountNumberLast4 ? ` 尾号${accountNumberLast4}` : ""
+        }`.trim(),
+      },
+    };
+  }
+
+  return { scope: "unknown", normalizedMethod, candidate: null };
+}
+
+export function parseAlipayStatement(text, options = {}) {
+  const rows = parseAlipayRows(text);
+  const transactions = [];
+  const reconciliationItems = [];
+  const skippedItems = [];
+
+  for (const row of rows) {
+    const parsed = normalizeAlipayRow(row, options);
+    if (!parsed) {
+      continue;
+    }
+    if (parsed.skipReason) {
+      skippedItems.push(parsed);
+      continue;
+    }
+    if (parsed.paymentScope === "alipay-account") {
+      transactions.push(toAlipayTransaction(parsed));
+    } else if (parsed.paymentScope === "bank-account") {
+      reconciliationItems.push(toAlipayReconciliationItem(parsed));
+    } else {
+      skippedItems.push({ ...parsed, skipReason: "unsupported-payment-method" });
+    }
+  }
+
+  return {
+    transactions,
+    reconciliationItems,
+    skippedItems,
+    accountCandidate: null,
+  };
+}
+
+function parseAlipayRows(text) {
+  const lines = String(text)
+    .split(/\r?\n/u)
+    .map((line) => line.replace(/\s+/gu, " ").trim())
+    .filter(Boolean);
+  const rows = [];
+  let block = [];
+
+  for (const line of lines) {
+    if (/^(?:支出|收入|不计\s*收支)\s+/u.test(line)) {
+      if (block.length > 0) {
+        rows.push(parseAlipayBlock(block));
+      }
+      block = [line];
+    } else if (block.length > 0) {
+      block.push(line);
+    }
+  }
+  if (block.length > 0) {
+    rows.push(parseAlipayBlock(block));
+  }
+
+  return rows.filter(Boolean);
+}
+
+function parseAlipayBlock(block) {
+  const clean = block.join(" ").replace(/\s+/gu, " ").trim();
+  const cleanMatch = clean.match(
+    /^(支出|收入|不计\s*收支)\s+(.+?)\s+(.+?)\s+(.+?)\s+([-+]?\d[\d,]*\.\d{2})\s+\S+\s+\S+\s+(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}:\d{2}))?/u,
+  );
+  if (cleanMatch) {
+    return buildAlipayRow({
+      status: cleanMatch[1],
+      counterparty: cleanMatch[2],
+      product: cleanMatch[3],
+      paymentMethod: cleanMatch[4],
+      amount: cleanMatch[5],
+      date: cleanMatch[6],
+      time: cleanMatch[7],
+    });
+  }
+
+  const dateMatch = clean.match(/(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}:\d{2}))?/u);
+  const amountMatches = [...clean.matchAll(/[-+]?\d[\d,]*\.\d{2}/gu)];
+  const methodMatch = clean.match(/(支付宝余额|支付宝|余额|[^\s]+银行[^\s]+(?:信用卡|储蓄卡|银行卡)?(?:[（(]\d{4}[）)])?)/u);
+  if (!dateMatch || amountMatches.length === 0 || !methodMatch) {
+    return null;
+  }
+
+  const statusMatch = clean.match(/^(支出|收入|不计\s*收支)\s+/u);
+  const beforeMethod = clean.slice(statusMatch ? statusMatch[0].length : 0, methodMatch.index).trim();
+  const fields = beforeMethod.split(/\s+/u).filter(Boolean);
+  return buildAlipayRow({
+    status: statusMatch ? statusMatch[1] : "支出",
+    counterparty: fields[0] || "",
+    product: fields.slice(1).join(" "),
+    paymentMethod: methodMatch[1],
+    amount: amountMatches[amountMatches.length - 1][0],
+    date: dateMatch[1],
+    time: dateMatch[2],
+  });
+}
+
+function buildAlipayRow({ status, counterparty, product, paymentMethod, amount, date, time }) {
+  const normalizedDate = normalizeDate(date);
+  const parsedAmount = parseAmount(amount);
+  if (!normalizedDate || !Number.isFinite(parsedAmount) || parsedAmount === 0) {
+    return null;
+  }
+
+  const direction = status === "收入" ? "income" : "expense";
+  const signedAmount = direction === "income" ? Math.abs(parsedAmount) : -Math.abs(parsedAmount);
+  const payment = classifyAlipayPaymentMethod(paymentMethod);
+  return {
+    date: normalizedDate,
+    counterparty: normalizeAlipayDisplayText(counterparty),
+    product: normalizeAlipayDisplayText(product),
+    paymentMethod: payment.normalizedMethod,
+    amount: roundMoney(signedAmount),
+    direction,
+    category: inferCategory(buildAlipayDescription(counterparty, product), direction),
+    paymentScope: payment.scope,
+    paymentAccountCandidate: payment.candidate,
+    description: buildAlipayDescription(counterparty, product),
+    source: "file",
+    ...(status === "不计收支" ? { skipReason: "excluded-by-statement" } : {}),
+    ...(time ? { time } : {}),
+  };
+}
+
+function normalizeAlipayRow(row) {
+  return row;
+}
+
+function toAlipayTransaction(row) {
+  const { paymentScope, paymentAccountCandidate, paymentMethod, counterparty, product, time, skipReason, ...transaction } = row;
+  return transaction;
+}
+
+function toAlipayReconciliationItem(row) {
+  const { paymentScope, description, source, time, skipReason, ...item } = row;
+  return item;
+}
+
+function normalizeAlipayCell(value) {
+  return String(value || "").replace(/\s+/gu, "").trim();
+}
+
+function normalizeAlipayDisplayText(value) {
+  return String(value || "").replace(/\s+/gu, " ").trim();
+}
+
+function buildAlipayDescription(counterparty, product) {
+  const parts = [counterparty, product]
+    .map((part) => normalizeAlipayDisplayText(part))
+    .filter(Boolean);
+  return [...new Set(parts)].join(" - ");
 }
 
 async function analyzeWithEndpoint(file, extractedText, options) {

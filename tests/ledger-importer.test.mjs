@@ -4,9 +4,102 @@ import { createServer } from "node:http";
 
 import {
   analyzeLedgerFile,
+  classifyAlipayPaymentMethod,
+  parseAlipayStatement,
   parseCmbCreditCardStatementText,
   parseCmbTransactionStatement,
 } from "../assets/ledger-importer.mjs";
+
+test("classifies Alipay payment methods by account scope", () => {
+  assert.deepEqual(classifyAlipayPaymentMethod("招商银行信用卡(1755)"), {
+    scope: "bank-account",
+    normalizedMethod: "招商银行信用卡(1755)",
+    candidate: {
+      institution: "招商银行",
+      accountKind: "credit-card",
+      accountNumberLast4: "1755",
+      accountFingerprint: "cmb-credit-card:1755",
+      displayName: "招商银行信用卡 尾号1755",
+    },
+  });
+
+  assert.deepEqual(classifyAlipayPaymentMethod("支付宝余额"), {
+    scope: "alipay-account",
+    normalizedMethod: "支付宝余额",
+    candidate: null,
+  });
+
+  assert.equal(classifyAlipayPaymentMethod("").scope, "unknown");
+});
+
+test("parses Alipay bank-card rows as reconciliation items only", () => {
+  const result = parseAlipayStatement(`支付宝支付科技有限公司 交易流水证明
+收/支 交易对方 商品说明 收/付款方式 金额 交易订单号 商家订单号 交易时间
+支出 高德打车 高德打车订单 招商银行信用卡(1755) 14.49 20260324220014662214274 0003N202603240000000014 2026-03-24 21:53:45
+不计收支 上海顺途科技有限公司 退款-北京丰台运城北 招商银行信用卡(1755) 317.50 20260311230014662214193 20260311ALPP00101750541 2026-03-31 00:08:52`);
+
+  assert.equal(result.transactions.length, 0);
+  assert.equal(result.reconciliationItems.length, 1);
+  assert.equal(result.skippedItems.length, 1);
+  assert.deepEqual(
+    result.reconciliationItems.map(({ date, counterparty, product, paymentMethod, amount, direction, category, paymentAccountCandidate }) => ({
+      date,
+      counterparty,
+      product,
+      paymentMethod,
+      amount,
+      direction,
+      category,
+      paymentAccountCandidate,
+    })),
+    [
+      {
+        date: "2026-03-24",
+        counterparty: "高德打车",
+        product: "高德打车订单",
+        paymentMethod: "招商银行信用卡(1755)",
+        amount: -14.49,
+        direction: "expense",
+        category: "交通",
+        paymentAccountCandidate: {
+          institution: "招商银行",
+          accountKind: "credit-card",
+          accountNumberLast4: "1755",
+          accountFingerprint: "cmb-credit-card:1755",
+          displayName: "招商银行信用卡 尾号1755",
+        },
+      },
+    ],
+  );
+});
+
+test("parses Alipay balance rows as importable Alipay transactions", () => {
+  const result = parseAlipayStatement(`支付宝支付科技有限公司 交易流水证明
+收/支 交易对方 商品说明 收/付款方式 金额 交易订单号 商家订单号 交易时间
+支出 星巴克 星巴克咖啡 支付宝余额 32.50 20260301220014662214274 A0001 2026-03-01 09:30:00`);
+
+  assert.equal(result.reconciliationItems.length, 0);
+  assert.deepEqual(
+    result.transactions.map(({ date, description, amount, direction, category, source }) => ({
+      date,
+      description,
+      amount,
+      direction,
+      category,
+      source,
+    })),
+    [
+      {
+        date: "2026-03-01",
+        description: "星巴克 - 星巴克咖啡",
+        amount: -32.5,
+        direction: "expense",
+        category: "餐饮",
+        source: "file",
+      },
+    ],
+  );
+});
 
 test("analyzes a local statement text file with fallback parsing", async () => {
   const file = new File(
