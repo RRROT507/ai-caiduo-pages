@@ -19,7 +19,7 @@ const TRANSACTION_TYPES = [
 
 const EXPENSE_CATEGORY_RULES = [
   ["餐饮", /餐厅|餐饮|早餐|午餐|晚餐|饭店|饭馆|面馆|面包|煎饼|小吃|水饺|饺子|烧烤|咖啡|外卖|美团外卖|饿了么|PIZZA\s*HUT|PIZZAHUT|必胜客|KFC|肯德基|麦当劳|汉堡王|华莱士|喜家德|星巴克|瑞幸|海底捞|蜜雪冰城|火锅|奶茶|茶饮|喜茶|奈雪/iu],
-  ["交通", /地铁|公交|滴滴|打车|高德|加油|停车|停车费|停车场|车场|停简单|铁路|火车|机票|航旅/u],
+  ["交通", /地铁|公交|滴滴|打车|高德|加油|停车|停车费|停车场|车场|停简单|ETC|etc|通行费|高速公路|高速费|过路费|高速信联|铁路|火车|机票|航旅/u],
   ["购物", /淘宝|天猫|京东|拼多多|超市|便利店|商场|购物|小米|苹果|抖音商城|果蔬好|生鲜超市|水果店|蔬菜/u],
   ["居家", /房租|物业|水费|电费|燃气|宽带|话费|移动|联通|电信/u],
   ["医疗", /医院|药|医保|挂号|体检|诊所/u],
@@ -249,6 +249,66 @@ export function normalizeTransactionCategory(category, type = "expense", descrip
   }
 
   return inferCategory(description, normalizedType);
+}
+
+export function applyBulkTransactionCategory(transactions = [], selectedIds = [], category = "") {
+  const selectedIdSet = new Set(selectedIds);
+  const sourceTransactions = Array.isArray(transactions) ? transactions : [];
+  const selectedTransactions = sourceTransactions.filter((transaction) =>
+    selectedIdSet.has(transaction.id),
+  );
+
+  if (selectedTransactions.length === 0) {
+    return {
+      status: "empty",
+      transactions: sourceTransactions,
+      changedCount: 0,
+      message: "请选择要修改的流水",
+    };
+  }
+
+  const selectedTypes = new Set(selectedTransactions.map(getTransactionType));
+  if (selectedTypes.size !== 1) {
+    return {
+      status: "mixed-type",
+      transactions: sourceTransactions,
+      changedCount: 0,
+      message: "请选择同一类型流水后再改分类",
+    };
+  }
+
+  const [type] = selectedTypes;
+  if (type === "transfer" || type === "refunded") {
+    return {
+      status: "fixed-type",
+      transactions: sourceTransactions,
+      changedCount: 0,
+      type,
+      message: "转账和已退款流水的分类固定",
+    };
+  }
+
+  const nextCategory = String(category || "").trim();
+  if (!CATEGORY_OPTIONS_BY_TYPE[type].includes(nextCategory)) {
+    return {
+      status: "invalid-category",
+      transactions: sourceTransactions,
+      changedCount: 0,
+      type,
+      message: "请选择当前类型可用的分类",
+    };
+  }
+
+  return {
+    status: "updated",
+    transactions: sourceTransactions.map((transaction) =>
+      selectedIdSet.has(transaction.id) ? { ...transaction, category: nextCategory } : transaction,
+    ),
+    changedCount: selectedTransactions.length,
+    type,
+    category: nextCategory,
+    message: `已将 ${selectedTransactions.length} 条流水改为「${nextCategory}」`,
+  };
 }
 
 export function normalizeLedgerTransaction(transaction) {

@@ -270,6 +270,9 @@
           </div>
           <div class="toolbar">
             <span id="selectedTransactionCount" class="selection-count" aria-live="polite">已选择 0 项</span>
+            <select id="bulkCategoryInput" aria-label="批量修改分类" disabled></select>
+            <button id="bulkCategoryButton" class="ghost-button" type="button" disabled>改分类</button>
+            <span id="bulkCategoryHint" class="selection-count bulk-category-hint" aria-live="polite">选择同类型流水后可批量改分类</span>
             <select id="categoryFilter" aria-label="筛选分类"></select>
             <button id="exportButton" class="ghost-button" type="button">导出 CSV</button>
             <button id="clearButton" class="danger-button" type="button">清空</button>

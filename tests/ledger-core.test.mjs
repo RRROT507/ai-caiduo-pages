@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   UNASSIGNED_ACCOUNT_ID,
+  applyBulkTransactionCategory,
   buildMerchantCategoryHistory,
   calculateRunningBalances,
   compareLedgerTransactionsDescending,
@@ -61,6 +62,71 @@ test("normalizes categories so they match the transaction type", () => {
   assert.equal(normalizeTransactionCategory("餐饮", "refunded", "退款配对"), "已退款");
 });
 
+test("changes categories for selected same-type transactions in bulk", () => {
+  const transactions = [
+    {
+      id: "metro",
+      date: "2026-03-18",
+      description: "地铁",
+      amount: -5,
+      direction: "expense",
+      category: "其他支出",
+    },
+    {
+      id: "parking",
+      date: "2026-03-19",
+      description: "停车费",
+      amount: -12,
+      direction: "expense",
+      category: "其他支出",
+    },
+    {
+      id: "salary",
+      date: "2026-03-20",
+      description: "工资",
+      amount: 2000,
+      direction: "income",
+      category: "工资",
+    },
+  ];
+
+  const result = applyBulkTransactionCategory(transactions, ["metro", "parking"], "交通");
+
+  assert.equal(result.status, "updated");
+  assert.equal(result.changedCount, 2);
+  assert.equal(result.transactions.find((transaction) => transaction.id === "metro").category, "交通");
+  assert.equal(result.transactions.find((transaction) => transaction.id === "parking").category, "交通");
+  assert.equal(result.transactions.find((transaction) => transaction.id === "salary").category, "工资");
+  assert.equal(transactions[0].category, "其他支出");
+});
+
+test("rejects bulk category changes across mixed transaction types", () => {
+  const transactions = [
+    {
+      id: "expense-row",
+      date: "2026-03-18",
+      description: "通勤",
+      amount: -5,
+      direction: "expense",
+      category: "其他支出",
+    },
+    {
+      id: "income-row",
+      date: "2026-03-19",
+      description: "报销",
+      amount: 5,
+      direction: "income",
+      category: "报销",
+    },
+  ];
+
+  const result = applyBulkTransactionCategory(transactions, ["expense-row", "income-row"], "交通");
+
+  assert.equal(result.status, "mixed-type");
+  assert.equal(result.changedCount, 0);
+  assert.deepEqual(result.transactions, transactions);
+});
+
 test("recommends categories with source and confidence without guessing", () => {
   assert.deepEqual(recommendCategory("财付通-虎头军煎饼（鼎成中心店）", "expense"), {
     category: "餐饮",
@@ -81,6 +147,12 @@ test("recommends categories with source and confidence without guessing", () => 
   assert.equal(recommendCategory("财付通-喜家德北京鼎成时代", "expense").category, "餐饮");
   assert.equal(recommendCategory("财付通-果蔬好", "expense").category, "购物");
   assert.equal(recommendCategory("财付通-停简单平台商户", "expense").category, "交通");
+  assert.deepEqual(recommendCategory("山东高速信联 ETC通行费", "expense"), {
+    category: "交通",
+    confidence: "high",
+    source: "rule",
+    merchant: "山东高速信联 ETC通行费",
+  });
   assert.deepEqual(recommendCategory("支付宝-未知商户服务", "expense"), {
     category: "其他支出",
     confidence: "low",

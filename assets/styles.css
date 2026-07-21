@@ -647,6 +647,10 @@ textarea {
   width: 160px;
 }
 
+#bulkCategoryButton {
+  white-space: nowrap;
+}
+
 .selection-count {
   display: inline-flex;
   min-height: 36px;
@@ -654,6 +658,13 @@ textarea {
   color: var(--muted);
   font-size: 13px;
   font-weight: 800;
+}
+
+.bulk-category-hint {
+  max-width: 190px;
+  justify-content: flex-start;
+  line-height: 1.35;
+  text-align: left;
 }
 
 .table-wrap {
@@ -835,8 +846,17 @@ td {
     width: 100%;
   }
 
+  .toolbar button {
+    width: 100%;
+  }
+
   .selection-count {
     min-height: 0;
+  }
+
+  .bulk-category-hint {
+    max-width: none;
+    width: 100%;
   }
 
   .overview-panel,

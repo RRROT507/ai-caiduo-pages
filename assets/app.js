@@ -2,6 +2,7 @@ import { analyzeLedgerFile } from "./ledger-importer.mjs";
 import {
   UNASSIGNED_ACCOUNT_ID,
   UNASSIGNED_ACCOUNT_NAME,
+  applyBulkTransactionCategory,
   buildMerchantCategoryHistory,
   calculateRunningBalances,
   compareLedgerTransactionsDescending,
@@ -93,6 +94,9 @@ const elements = {
   confirmImportButton: document.querySelector("#confirmImportButton"),
   discardImportButton: document.querySelector("#discardImportButton"),
   selectedTransactionCount: document.querySelector("#selectedTransactionCount"),
+  bulkCategoryInput: document.querySelector("#bulkCategoryInput"),
+  bulkCategoryButton: document.querySelector("#bulkCategoryButton"),
+  bulkCategoryHint: document.querySelector("#bulkCategoryHint"),
   selectVisibleTransactionsInput: document.querySelector("#selectVisibleTransactionsInput"),
   categoryFilter: document.querySelector("#categoryFilter"),
   exportButton: document.querySelector("#exportButton"),
@@ -235,6 +239,15 @@ function bindEvents() {
 
   elements.selectVisibleTransactionsInput.addEventListener("change", () => {
     toggleVisibleTransactionSelection(elements.selectVisibleTransactionsInput.checked);
+  });
+
+  elements.bulkCategoryInput.addEventListener("change", () => {
+    elements.bulkCategoryButton.disabled =
+      elements.bulkCategoryInput.disabled || !elements.bulkCategoryInput.value;
+  });
+
+  elements.bulkCategoryButton.addEventListener("click", () => {
+    changeSelectedTransactionCategory();
   });
 
   elements.exportButton.addEventListener("click", () => {
@@ -640,6 +653,26 @@ function toggleVisibleTransactionSelection(selected) {
 
 function clearTransactionSelection() {
   state.selectedTransactionIds.clear();
+}
+
+function changeSelectedTransactionCategory() {
+  const result = applyBulkTransactionCategory(
+    state.transactions,
+    state.selectedTransactionIds,
+    elements.bulkCategoryInput.value,
+  );
+
+  if (result.status !== "updated") {
+    renderBulkCategoryControls();
+    elements.bulkCategoryHint.textContent = result.message;
+    return;
+  }
+
+  state.transactions = result.transactions;
+  state.selectedTransactionIds.clear();
+  persist();
+  render();
+  elements.bulkCategoryHint.textContent = result.message;
 }
 
 function selectDateRangeBoundary(dateValue) {
@@ -1354,6 +1387,7 @@ function updateTransactionSelectionControls(visibleTransactions = getVisibleTran
     visibleIds.length > 0 && visibleSelectedCount === visibleIds.length;
   elements.selectVisibleTransactionsInput.indeterminate =
     visibleSelectedCount > 0 && visibleSelectedCount < visibleIds.length;
+  renderBulkCategoryControls();
 }
 
 function pruneSelectedTransactionIds() {
@@ -1362,6 +1396,62 @@ function pruneSelectedTransactionIds() {
     if (!existingIds.has(id)) {
       state.selectedTransactionIds.delete(id);
     }
+  }
+}
+
+function renderBulkCategoryControls() {
+  const selectedTransactions = state.transactions.filter((transaction) =>
+    state.selectedTransactionIds.has(transaction.id),
+  );
+  const selectedTypes = new Set(selectedTransactions.map(getTransactionType));
+  const hasSelection = selectedTransactions.length > 0;
+  const canChangeType =
+    hasSelection &&
+    selectedTypes.size === 1 &&
+    !selectedTypes.has("transfer") &&
+    !selectedTypes.has("refunded");
+  const type = canChangeType ? [...selectedTypes][0] : "";
+  const categories = type ? getCategoriesForType(type) : [];
+  const currentCategories = new Set(
+    selectedTransactions.map((transaction) =>
+      normalizeTransactionCategory(
+        transaction.category,
+        getTransactionType(transaction),
+        transaction.description,
+      ),
+    ),
+  );
+  const selectedCategory = currentCategories.size === 1 ? [...currentCategories][0] : "";
+  const needsExplicitCategory = canChangeType && !selectedCategory;
+  const optionValues = needsExplicitCategory ? ["", ...categories] : categories;
+
+  replaceChildrenCompat(
+    elements.bulkCategoryInput,
+    ...(optionValues.length > 0 ? optionValues : [""]).map((category) => {
+      const option = document.createElement("option");
+      option.value = category;
+      option.textContent = category || "选择分类";
+      return option;
+    }),
+  );
+  elements.bulkCategoryInput.disabled = !canChangeType;
+  elements.bulkCategoryButton.disabled = !canChangeType || needsExplicitCategory;
+  elements.bulkCategoryInput.value =
+    selectedCategory && categories.includes(selectedCategory) ? selectedCategory : categories[0] || "";
+  if (needsExplicitCategory) {
+    elements.bulkCategoryInput.value = "";
+  }
+
+  if (!hasSelection) {
+    elements.bulkCategoryHint.textContent = "选择同类型流水后可批量改分类";
+  } else if (selectedTypes.size !== 1) {
+    elements.bulkCategoryHint.textContent = "请选择同一类型流水";
+  } else if (selectedTypes.has("transfer") || selectedTypes.has("refunded")) {
+    elements.bulkCategoryHint.textContent = "转账和已退款分类固定";
+  } else if (needsExplicitCategory) {
+    elements.bulkCategoryHint.textContent = `${selectedTransactions.length} 条可批量修改，请选择分类`;
+  } else {
+    elements.bulkCategoryHint.textContent = `${selectedTransactions.length} 条可批量修改`;
   }
 }
 

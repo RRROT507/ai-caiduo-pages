@@ -1043,6 +1043,116 @@ test("selects multiple transaction rows and displays generic transfer tags", asy
   }
 });
 
+test("changes selected same-type transaction categories in bulk", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer();
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: edgePath,
+  });
+
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    await page.addInitScript(() => {
+      const RealDate = Date;
+      const frozenTime = new RealDate("2026-03-20T12:00:00.000Z").valueOf();
+      class FrozenDate extends RealDate {
+        constructor(...args) {
+          super(...(args.length ? args : [frozenTime]));
+        }
+
+        static now() {
+          return frozenTime;
+        }
+      }
+      globalThis.Date = FrozenDate;
+    });
+
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem(
+        "ai-caiduo-accounts-v1",
+        JSON.stringify([{ id: "cash", name: "现金", openingBalance: 0 }]),
+      );
+      localStorage.setItem(
+        "ai-caiduo-transactions-v1",
+        JSON.stringify([
+          {
+            id: "metro",
+            date: "2026-03-18",
+            description: "地铁",
+            amount: -5,
+            direction: "expense",
+            category: "其他支出",
+            accountId: "cash",
+            sequence: 1,
+          },
+          {
+            id: "parking",
+            date: "2026-03-19",
+            description: "停车",
+            amount: -12,
+            direction: "expense",
+            category: "其他支出",
+            accountId: "cash",
+            sequence: 2,
+          },
+          {
+            id: "bonus",
+            date: "2026-03-20",
+            description: "奖金",
+            amount: 100,
+            direction: "income",
+            category: "奖金",
+            accountId: "cash",
+            sequence: 3,
+          },
+        ]),
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+
+    await page.check('[data-select-id="metro"]');
+    await page.check('[data-select-id="parking"]');
+    assert.equal(await page.locator("#bulkCategoryButton").isDisabled(), false);
+    await page.selectOption("#bulkCategoryInput", "交通");
+    await page.click("#bulkCategoryButton");
+
+    let savedTransactions = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ai-caiduo-transactions-v1") || "[]"),
+    );
+    assert.equal(savedTransactions.find((transaction) => transaction.id === "metro").category, "交通");
+    assert.equal(savedTransactions.find((transaction) => transaction.id === "parking").category, "交通");
+    assert.match(await page.locator("#selectedTransactionCount").textContent(), /已选择 0 项/u);
+
+    await page.check('[data-select-id="metro"]');
+    await page.check('[data-select-id="bonus"]');
+    assert.equal(await page.locator("#bulkCategoryButton").isDisabled(), true);
+    assert.match(await page.locator("#bulkCategoryHint").textContent(), /同一类型/u);
+
+    savedTransactions = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ai-caiduo-transactions-v1") || "[]"),
+    );
+    assert.equal(savedTransactions.find((transaction) => transaction.id === "bonus").category, "奖金");
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
 test("annotates matched bank-card transactions from Alipay statements without creating duplicates", async (t) => {
   if (!existsSync(edgePath)) {
     t.skip("Microsoft Edge is not available in this environment");
