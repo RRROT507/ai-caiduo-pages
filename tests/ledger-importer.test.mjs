@@ -101,6 +101,70 @@ test("parses Alipay balance rows as importable Alipay transactions", () => {
   );
 });
 
+test("records zero-amount Alipay rows as skipped items with row metadata", () => {
+  const result = parseAlipayStatement(`支付宝支付科技有限公司 交易流水证明
+收/付款方式
+支出 甲方 商品 支付宝 0.00 order merchant 2026-03-02 09:30:00`);
+
+  assert.equal(result.transactions.length, 0);
+  assert.equal(result.reconciliationItems.length, 0);
+  assert.deepEqual(
+    result.skippedItems.map(({ date, counterparty, product, paymentMethod, amount, skipReason }) => ({
+      date,
+      counterparty,
+      product,
+      paymentMethod,
+      amount,
+      skipReason,
+    })),
+    [
+      {
+        date: "2026-03-02",
+        counterparty: "甲方",
+        product: "商品",
+        paymentMethod: "支付宝",
+        amount: 0,
+        skipReason: "zero-amount",
+      },
+    ],
+  );
+});
+
+test("records unsupported Alipay payment methods as skipped items", () => {
+  const result = parseAlipayStatement(`支付宝支付科技有限公司 交易流水证明
+收/付款方式
+支出 甲方 商品 微信支付 12.00 order merchant 2026-03-03 09:30:00`);
+
+  assert.equal(result.transactions.length, 0);
+  assert.equal(result.reconciliationItems.length, 0);
+  assert.deepEqual(
+    result.skippedItems.map(({ date, counterparty, product, paymentMethod, amount, skipReason }) => ({
+      date,
+      counterparty,
+      product,
+      paymentMethod,
+      amount,
+      skipReason,
+    })),
+    [
+      {
+        date: "2026-03-03",
+        counterparty: "甲方",
+        product: "商品",
+        paymentMethod: "微信支付",
+        amount: -12,
+        skipReason: "unsupported-payment-method",
+      },
+    ],
+  );
+});
+
+test("classifies all supported Alipay balance labels", () => {
+  for (const label of ["支付宝余额", "支付宝", "余额"]) {
+    assert.equal(classifyAlipayPaymentMethod(label).scope, "alipay-account");
+  }
+});
+
 test("analyzes a local statement text file with fallback parsing", async () => {
   const file = new File(
     [

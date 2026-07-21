@@ -180,7 +180,7 @@ export function parseAlipayStatement(text, options = {}) {
   const skippedItems = [];
 
   for (const row of rows) {
-    const parsed = normalizeAlipayRow(row, options);
+    const parsed = normalizeAlipayRow(row);
     if (!parsed) {
       continue;
     }
@@ -271,12 +271,16 @@ function parseAlipayBlock(block) {
 function buildAlipayRow({ status, counterparty, product, paymentMethod, amount, date, time }) {
   const normalizedDate = normalizeDate(date);
   const parsedAmount = parseAmount(amount);
-  if (!normalizedDate || !Number.isFinite(parsedAmount) || parsedAmount === 0) {
+  if (!normalizedDate || !Number.isFinite(parsedAmount)) {
     return null;
   }
 
   const direction = status === "收入" ? "income" : "expense";
-  const signedAmount = direction === "income" ? Math.abs(parsedAmount) : -Math.abs(parsedAmount);
+  const signedAmount = parsedAmount === 0
+    ? 0
+    : direction === "income"
+      ? Math.abs(parsedAmount)
+      : -Math.abs(parsedAmount);
   const payment = classifyAlipayPaymentMethod(paymentMethod);
   return {
     date: normalizedDate,
@@ -290,7 +294,11 @@ function buildAlipayRow({ status, counterparty, product, paymentMethod, amount, 
     paymentAccountCandidate: payment.candidate,
     description: buildAlipayDescription(counterparty, product),
     source: "file",
-    ...(status === "不计收支" ? { skipReason: "excluded-by-statement" } : {}),
+    ...(parsedAmount === 0
+      ? { skipReason: "zero-amount" }
+      : status === "不计收支"
+        ? { skipReason: "excluded-by-statement" }
+        : {}),
     ...(time ? { time } : {}),
   };
 }
