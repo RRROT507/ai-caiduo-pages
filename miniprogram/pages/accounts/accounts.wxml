@@ -1,0 +1,46 @@
+<view class="page">
+  <view class="header">
+    <view class="eyebrow">账户与初始金额</view>
+    <view class="title">账户管理</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">新增账户</view>
+    <view class="form-grid">
+      <view class="field">
+        <view class="field-label">账户名称</view>
+        <input class="input" placeholder="例如：招商银行 尾号3598" value="{{newAccountName}}" bindinput="onNewAccountNameInput" />
+      </view>
+      <view class="field">
+        <view class="field-label">初始金额</view>
+        <input class="input" type="text" placeholder="可填负数，如 -30435.91" value="{{newOpeningBalance}}" bindinput="onNewOpeningBalanceInput" />
+      </view>
+      <view class="field full">
+        <button class="primary-button" bindtap="addAccount">添加账户</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">已有账户</view>
+    <block wx:for="{{accountRows}}" wx:key="id">
+      <view class="account-card">
+        <view class="form-grid">
+          <view class="field">
+            <view class="field-label">账户名称</view>
+            <input class="input" value="{{item.draftName}}" data-id="{{item.id}}" bindinput="onAccountNameInput" />
+          </view>
+          <view class="field">
+            <view class="field-label">初始金额</view>
+            <input class="input" type="text" value="{{item.draftOpeningBalance}}" data-id="{{item.id}}" bindinput="onOpeningBalanceInput" />
+          </view>
+        </view>
+        <view class="row-subtitle">当前余额 {{item.currentBalanceText}}</view>
+        <view class="account-actions">
+          <button class="secondary-button" data-id="{{item.id}}" bindtap="saveAccount">保存</button>
+          <button class="danger-button" data-id="{{item.id}}" bindtap="deleteAccount">删除</button>
+        </view>
+      </view>
+    </block>
+  </view>
+</view>

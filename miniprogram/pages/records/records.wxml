@@ -1,0 +1,34 @@
+<view class="page">
+  <view class="header">
+    <view class="eyebrow">流水明细</view>
+    <view class="title">交易记录</view>
+  </view>
+
+  <view class="section">
+    <view class="row-main">
+      <view class="section-title">已选择 {{selectedCount}} 项</view>
+      <button class="danger-button" size="mini" bindtap="deleteSelectedTransactions" disabled="{{selectedCount === 0}}">删除</button>
+    </view>
+    <view wx:if="{{rows.length === 0}}" class="empty">还没有交易记录</view>
+    <checkbox-group bindchange="onSelectionChange">
+      <block wx:for="{{rows}}" wx:key="id">
+        <view class="row checkbox-row">
+          <checkbox value="{{item.id}}" checked="{{item.checked}}" />
+          <view style="flex: 1; min-width: 0;">
+            <view class="row-main">
+              <view>
+                <view class="row-title">{{item.description}}</view>
+                <view class="row-subtitle">
+                  <text class="pill {{item.typeClass}}">{{item.typeLabel}}</text>
+                  <text>{{item.date}} · {{item.accountName}} · {{item.category}}</text>
+                </view>
+              </view>
+              <text class="amount {{item.amountClass}}">{{item.amountText}}</text>
+            </view>
+            <view class="row-subtitle">余额 {{item.balanceText}}</view>
+          </view>
+        </view>
+      </block>
+    </checkbox-group>
+  </view>
+</view>

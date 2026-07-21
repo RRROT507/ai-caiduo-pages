@@ -1,0 +1,125 @@
+<view class="page">
+  <view class="header">
+    <view class="eyebrow">本地优先记账</view>
+    <view class="title">AI财舵</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">现金流看板</view>
+    <view class="form-grid">
+      <view class="field">
+        <view class="field-label">开始日期</view>
+        <picker mode="date" value="{{startDate}}" bindchange="onStartDateChange">
+          <view class="picker">{{startDate}}</view>
+        </picker>
+      </view>
+      <view class="field">
+        <view class="field-label">结束日期</view>
+        <picker mode="date" value="{{endDate}}" bindchange="onEndDateChange">
+          <view class="picker">{{endDate}}</view>
+        </picker>
+      </view>
+      <view class="field full">
+        <view class="field-label">账户</view>
+        <picker range="{{accountFilterOptions}}" range-key="name" value="{{accountFilterIndex}}" bindchange="onAccountFilterChange">
+          <view class="picker">{{accountFilterOptions[accountFilterIndex].name}}</view>
+        </picker>
+      </view>
+    </view>
+
+    <view class="metric-grid">
+      <view class="metric">
+        <view class="metric-label">收入</view>
+        <text class="metric-value income-text">{{summary.incomeText}}</text>
+      </view>
+      <view class="metric">
+        <view class="metric-label">支出</view>
+        <text class="metric-value expense-text">{{summary.expenseText}}</text>
+      </view>
+      <view class="metric">
+        <view class="metric-label">结余</view>
+        <text class="metric-value">{{summary.balanceText}}</text>
+      </view>
+      <view class="metric">
+        <view class="metric-label">笔数</view>
+        <text class="metric-value">{{summary.count}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">快速入账</view>
+    <view class="form-grid">
+      <view class="field">
+        <view class="field-label">日期</view>
+        <picker mode="date" value="{{form.date}}" bindchange="onEntryDateChange">
+          <view class="picker">{{form.date}}</view>
+        </picker>
+      </view>
+      <view class="field">
+        <view class="field-label">类型</view>
+        <picker range="{{transactionTypes}}" range-key="label" value="{{typeIndex}}" bindchange="onTypeChange">
+          <view class="picker">{{transactionTypes[typeIndex].label}}</view>
+        </picker>
+      </view>
+      <view class="field">
+        <view class="field-label">{{isTransfer ? "转出账户" : "账户"}}</view>
+        <picker range="{{accounts}}" range-key="name" value="{{accountIndex}}" bindchange="onEntryAccountChange">
+          <view class="picker">{{accounts[accountIndex].name}}</view>
+        </picker>
+      </view>
+      <view class="field" wx:if="{{isTransfer}}">
+        <view class="field-label">转入账户</view>
+        <picker range="{{accounts}}" range-key="name" value="{{toAccountIndex}}" bindchange="onTransferToAccountChange">
+          <view class="picker">{{accounts[toAccountIndex].name}}</view>
+        </picker>
+      </view>
+      <view class="field">
+        <view class="field-label">金额</view>
+        <input class="input" type="digit" placeholder="0.00" value="{{form.amount}}" bindinput="onAmountInput" />
+      </view>
+      <view class="field" wx:if="{{!isTransfer}}">
+        <view class="field-label">分类</view>
+        <picker range="{{categoryOptions}}" value="{{categoryIndex}}" bindchange="onCategoryChange">
+          <view class="picker">{{categoryOptions[categoryIndex]}}</view>
+        </picker>
+      </view>
+      <view class="field full">
+        <view class="field-label">说明</view>
+        <input class="input" maxlength="40" placeholder="例如：午餐、工资、账户互转" value="{{form.description}}" bindinput="onDescriptionInput" />
+      </view>
+      <view class="field full">
+        <button class="primary-button" bindtap="submitTransaction">添加</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">常用功能</view>
+    <view class="nav-grid">
+      <view class="nav-button" data-url="/pages/records/records" bindtap="navigateToPage">交易记录</view>
+      <view class="nav-button" data-url="/pages/accounts/accounts" bindtap="navigateToPage">账户管理</view>
+      <view class="nav-button" data-url="/pages/import/import" bindtap="navigateToPage">账单导入</view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">最近流水</view>
+    <view wx:if="{{recentTransactions.length === 0}}" class="empty">还没有流水</view>
+    <block wx:for="{{recentTransactions}}" wx:key="id">
+      <view class="row">
+        <view class="row-main">
+          <view>
+            <view class="row-title">{{item.description}}</view>
+            <view class="row-subtitle">
+              <text class="pill {{item.typeClass}}">{{item.typeLabel}}</text>
+              <text>{{item.date}} · {{item.accountName}} · {{item.category}}</text>
+            </view>
+          </view>
+          <text class="amount {{item.amountClass}}">{{item.amountText}}</text>
+        </view>
+        <view class="row-subtitle">余额 {{item.balanceText}}</view>
+      </view>
+    </block>
+  </view>
+</view>

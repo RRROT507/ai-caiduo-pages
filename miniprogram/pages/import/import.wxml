@@ -1,0 +1,20 @@
+<view class="page">
+  <view class="header">
+    <view class="eyebrow">账单文件</view>
+    <view class="title">导入准备</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">当前小程序版能力</view>
+    <view class="status-box">
+      小程序首版已支持本地手动记账、账户初始金额和交易记录管理。PDF 账单自动识别需要云端 OCR 和解析服务，接入前不会把文件自动入账。
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">选择账单文件</view>
+    <button class="secondary-button" bindtap="chooseStatementFile">选择文件</button>
+    <view class="row-subtitle">已选择：{{fileName}}</view>
+    <button class="primary-button" bindtap="showOcrNotice">了解下一步</button>
+  </view>
+</view>

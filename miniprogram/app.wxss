@@ -1,0 +1,251 @@
+page {
+  background: #f7f4ee;
+  color: #1f2933;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.page {
+  min-height: 100vh;
+  padding: 28rpx;
+  box-sizing: border-box;
+}
+
+.header {
+  margin-bottom: 24rpx;
+}
+
+.eyebrow {
+  margin: 0 0 8rpx;
+  color: #68727f;
+  font-size: 24rpx;
+}
+
+.title {
+  margin: 0;
+  color: #132026;
+  font-size: 44rpx;
+  font-weight: 700;
+}
+
+.section {
+  margin-bottom: 24rpx;
+  padding: 24rpx;
+  border: 1rpx solid #e2ddd4;
+  border-radius: 16rpx;
+  background: #fffaf2;
+}
+
+.section-title {
+  margin-bottom: 20rpx;
+  color: #27343b;
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+}
+
+.metric {
+  padding: 18rpx;
+  border-radius: 14rpx;
+  background: #f3eadb;
+}
+
+.metric-label {
+  color: #68727f;
+  font-size: 24rpx;
+}
+
+.metric-value {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 34rpx;
+  font-weight: 700;
+}
+
+.income-text {
+  color: #b42318;
+}
+
+.expense-text {
+  color: #137333;
+}
+
+.neutral-text {
+  color: #64748b;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18rpx;
+}
+
+.field {
+  min-width: 0;
+}
+
+.field.full {
+  grid-column: 1 / -1;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 8rpx;
+  color: #5d6875;
+  font-size: 24rpx;
+}
+
+.input,
+.picker {
+  min-height: 78rpx;
+  padding: 0 20rpx;
+  border: 1rpx solid #d9d2c5;
+  border-radius: 12rpx;
+  background: #ffffff;
+  box-sizing: border-box;
+  color: #1f2933;
+  font-size: 28rpx;
+  line-height: 78rpx;
+}
+
+.primary-button,
+.secondary-button,
+.danger-button {
+  min-height: 78rpx;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+}
+
+.primary-button {
+  background: #1f8a70;
+  color: #ffffff;
+}
+
+.secondary-button {
+  background: #e8f1ee;
+  color: #146c58;
+}
+
+.danger-button {
+  background: #fff1f0;
+  color: #b42318;
+}
+
+.nav-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.nav-button {
+  padding: 18rpx 10rpx;
+  border-radius: 12rpx;
+  background: #edf4f1;
+  color: #146c58;
+  font-size: 26rpx;
+  text-align: center;
+}
+
+.row {
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid #ebe4d8;
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.row-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.row-title {
+  overflow: hidden;
+  color: #1f2933;
+  font-size: 28rpx;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-subtitle {
+  margin-top: 6rpx;
+  color: #68727f;
+  font-size: 24rpx;
+}
+
+.amount {
+  flex: 0 0 auto;
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40rpx;
+  margin-right: 8rpx;
+  padding: 0 14rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+}
+
+.pill-income {
+  background: #fee4d6;
+  color: #b42318;
+}
+
+.pill-expense {
+  background: #dcf5e6;
+  color: #137333;
+}
+
+.pill-transfer,
+.pill-refunded {
+  background: #e5e7eb;
+  color: #64748b;
+}
+
+.empty {
+  padding: 32rpx 0;
+  color: #8a7280;
+  font-size: 26rpx;
+  text-align: center;
+}
+
+.account-card {
+  margin-bottom: 18rpx;
+  padding: 20rpx;
+  border: 1rpx solid #e2ddd4;
+  border-radius: 14rpx;
+  background: #fffdf8;
+}
+
+.account-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12rpx;
+  margin-top: 14rpx;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14rpx;
+}
+
+.status-box {
+  padding: 22rpx;
+  border-radius: 14rpx;
+  background: #edf4f1;
+  color: #27564c;
+  font-size: 26rpx;
+  line-height: 1.6;
+}
