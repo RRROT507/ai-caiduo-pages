@@ -140,6 +140,29 @@ test("parses Alipay balance rows as importable Alipay transactions", () => {
   );
 });
 
+test("keeps Alipay balance rows when a continuation mentions a card suffix", () => {
+  const result = parseAlipayStatement(`支付宝支付科技有限公司 交易流水证明
+支出 甲方 商品说明 支付宝余额 12.00 order merchant 2026-03-04
+会员卡(1755) 999 10:00:00`);
+
+  assert.equal(result.reconciliationItems.length, 0);
+  assert.equal(result.skippedItems.length, 0);
+  assert.deepEqual(
+    result.transactions.map(({ date, amount, direction }) => ({
+      date,
+      amount,
+      direction,
+    })),
+    [
+      {
+        date: "2026-03-04",
+        amount: -12,
+        direction: "expense",
+      },
+    ],
+  );
+});
+
 test("records zero-amount Alipay rows as skipped items with row metadata", () => {
   const result = parseAlipayStatement(`支付宝支付科技有限公司 交易流水证明
 收/付款方式

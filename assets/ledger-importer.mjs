@@ -309,7 +309,11 @@ function parseAlipayBlock(block) {
 
 function completeAlipayPaymentMethod(paymentMethod, rowText) {
   const normalizedMethod = String(paymentMethod || "").trim();
-  if (!normalizedMethod || /[（(]\d{4}[）)]/u.test(normalizedMethod)) {
+  if (
+    !normalizedMethod
+    || /[（(]\d{4}[）)]/u.test(normalizedMethod)
+    || !/银行(?:信用|储蓄)$/u.test(normalizedMethod)
+  ) {
     return normalizedMethod;
   }
 
@@ -317,16 +321,14 @@ function completeAlipayPaymentMethod(paymentMethod, rowText) {
   const tail = methodIndex >= 0
     ? String(rowText || "").slice(methodIndex + normalizedMethod.length)
     : String(rowText || "");
-  const suffixMatch = tail.match(/(?:信用卡|储蓄卡|银行卡|卡)[（(]\d{4}[）)]/u);
-  if (!suffixMatch) {
+  const continuationMatch = tail.match(
+    /^\s+[-+]?\d[\d,]*\.\d{2}\s+\S+\s+\S+\s+\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2}:\d{2})?\s+(?:\S+\s+){0,3}(卡[（(]\d{4}[）)])\s+\S+\s+\S+\s+\d{2}:\d{2}:\d{2}(?:\s+\S+)*$/u,
+  );
+  if (!continuationMatch) {
     return normalizedMethod;
   }
 
-  const suffixText = suffixMatch[0];
-  if (normalizedMethod.endsWith("卡") && suffixText.startsWith("卡")) {
-    return `${normalizedMethod}${suffixText.slice(1)}`;
-  }
-  return `${normalizedMethod}${suffixText}`;
+  return `${normalizedMethod}${continuationMatch[1]}`;
 }
 
 function buildAlipayRow({ status, counterparty, product, paymentMethod, amount, date, time }) {
