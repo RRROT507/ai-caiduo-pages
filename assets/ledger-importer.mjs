@@ -229,15 +229,16 @@ function parseAlipayRows(text) {
   let block = [];
 
   for (const line of lines) {
-    if (/^(?:支出|收入|不计\s*收支)\s+/u.test(line)) {
+    const normalizedLine = normalizeAlipayWrappedStatusLine(line);
+    if (/^(?:支出|收入|不计\s*收支)\s+/u.test(normalizedLine)) {
       if (block.length > 0) {
         rows.push(parseAlipayBlock(block));
       }
-      block = [line];
+      block = [normalizedLine];
     } else if (block.length === 0 && line.split(/\s+/u).length === 1 && line.length <= 4) {
       block = [line];
     } else if (block.length > 0) {
-      block.push(line);
+      block.push(normalizeAlipayContinuationLine(normalizedLine, block));
     }
   }
   if (block.length > 0) {
@@ -245,6 +246,17 @@ function parseAlipayRows(text) {
   }
 
   return rows.filter(Boolean);
+}
+
+function normalizeAlipayWrappedStatusLine(line) {
+  return String(line || "").replace(/^不计\s+/u, "不计收支 ");
+}
+
+function normalizeAlipayContinuationLine(line, block) {
+  if (block.length > 0 && /^不计收支\s/u.test(block[0])) {
+    return String(line || "").replace(/^收支\s+/u, "");
+  }
+  return line;
 }
 
 function parseAlipayBlock(block) {
@@ -257,7 +269,7 @@ function parseAlipayBlock(block) {
       status: cleanMatch[1],
       counterparty: cleanMatch[2],
       product: cleanMatch[3],
-      paymentMethod: cleanMatch[4],
+      paymentMethod: completeAlipayPaymentMethod(cleanMatch[4], clean),
       amount: cleanMatch[5],
       date: cleanMatch[6],
       time: cleanMatch[7],
@@ -288,11 +300,33 @@ function parseAlipayBlock(block) {
     status: statusMatch ? statusMatch[1] : "支出",
     counterparty: fields[0] || "",
     product: fields.slice(1).join(" "),
-    paymentMethod,
+    paymentMethod: completeAlipayPaymentMethod(paymentMethod, clean),
     amount: amountMatches[amountMatches.length - 1][0],
     date: dateMatch[1],
     time: dateMatch[2],
   });
+}
+
+function completeAlipayPaymentMethod(paymentMethod, rowText) {
+  const normalizedMethod = String(paymentMethod || "").trim();
+  if (!normalizedMethod || /[（(]\d{4}[）)]/u.test(normalizedMethod)) {
+    return normalizedMethod;
+  }
+
+  const methodIndex = String(rowText || "").indexOf(normalizedMethod);
+  const tail = methodIndex >= 0
+    ? String(rowText || "").slice(methodIndex + normalizedMethod.length)
+    : String(rowText || "");
+  const suffixMatch = tail.match(/(?:信用卡|储蓄卡|银行卡|卡)[（(]\d{4}[）)]/u);
+  if (!suffixMatch) {
+    return normalizedMethod;
+  }
+
+  const suffixText = suffixMatch[0];
+  if (normalizedMethod.endsWith("卡") && suffixText.startsWith("卡")) {
+    return `${normalizedMethod}${suffixText.slice(1)}`;
+  }
+  return `${normalizedMethod}${suffixText}`;
 }
 
 function buildAlipayRow({ status, counterparty, product, paymentMethod, amount, date, time }) {

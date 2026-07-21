@@ -73,6 +73,44 @@ test("parses Alipay bank-card rows as reconciliation items only", () => {
   );
 });
 
+test("parses wrapped Alipay payment methods from PDF text", () => {
+  const result = parseAlipayStatement(`支付宝支付科技有限公司 交易流水证明
+收/支 交易对方 商品说明 收/付款方式 金额 交易订单号 商家订单号 交易时间
+支出 山东高速信联 ETC通行费 招商银行信用 4.75 20260331220014662214106 20260331112780012200089 2026-03-31
+科技股份有限 卡(1755) 53640 14676_1 21:22:06
+公司
+不计 上海顺途科技 退款-北京丰台运 招商银行信用 317.50 20260311230014662214193 20260311ALPP00101750541 2026-03-31
+收支 有限公司 城北 卡(1755) 49019_20260331ALRP00295 0 00:08:52`);
+
+  assert.equal(result.transactions.length, 0);
+  assert.equal(result.reconciliationItems.length, 1);
+  assert.equal(result.skippedItems.length, 1);
+  assert.deepEqual(
+    result.reconciliationItems.map(({ date, paymentMethod, paymentAccountCandidate }) => ({
+      date,
+      paymentMethod,
+      paymentAccountCandidate,
+    })),
+    [
+      {
+        date: "2026-03-31",
+        paymentMethod: "招商银行信用卡(1755)",
+        paymentAccountCandidate: {
+          institution: "招商银行",
+          accountKind: "credit-card",
+          accountNumberLast4: "1755",
+          accountFingerprint: "cmb-credit-card:1755",
+          displayName: "招商银行信用卡 尾号1755",
+        },
+      },
+    ],
+  );
+  assert.deepEqual(
+    result.skippedItems.map(({ paymentMethod, skipReason }) => ({ paymentMethod, skipReason })),
+    [{ paymentMethod: "招商银行信用卡(1755)", skipReason: "excluded-by-statement" }],
+  );
+});
+
 test("parses Alipay balance rows as importable Alipay transactions", () => {
   const result = parseAlipayStatement(`支付宝支付科技有限公司 交易流水证明
 收/支 交易对方 商品说明 收/付款方式 金额 交易订单号 商家订单号 交易时间

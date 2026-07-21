@@ -1,4 +1,4 @@
-const CACHE_NAME = "ai-caiduo-v22";
+const CACHE_NAME = "ai-caiduo-v23";
 const APP_SHELL = [
   "./",
   "index.html",
