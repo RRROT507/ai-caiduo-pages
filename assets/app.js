@@ -466,13 +466,22 @@ function confirmPendingImport() {
 
   const selectedImportAccountId = elements.importAccountInput.value || UNASSIGNED_ACCOUNT_ID;
   let importAccountId = normalizeAccountId(selectedImportAccountId);
-
-  if (
+  const shouldCreateDetectedAccount =
     state.pendingAccountMode === "new" &&
     state.pendingAccountCandidate &&
     elements.addDetectedAccountInput.checked &&
-    selectedImportAccountId === UNASSIGNED_ACCOUNT_ID
+    selectedImportAccountId === UNASSIGNED_ACCOUNT_ID;
+
+  if (
+    state.pendingTransactions.length > 0 &&
+    selectedImportAccountId === UNASSIGNED_ACCOUNT_ID &&
+    !shouldCreateDetectedAccount
   ) {
+    setImportStatus("请选择入账账户后再确认");
+    return;
+  }
+
+  if (shouldCreateDetectedAccount) {
     const createdAccount = createAccountFromCandidate(state.pendingAccountCandidate);
     importAccountId = createdAccount.id;
   }

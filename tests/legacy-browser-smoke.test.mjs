@@ -1401,6 +1401,62 @@ test("imports true Alipay balance rows into an existing Alipay account without m
   }
 });
 
+test("requires an account before confirming true Alipay balance rows", async (t) => {
+  if (!existsSync(edgePath)) {
+    t.skip("Microsoft Edge is not available in this environment");
+    return;
+  }
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    t.skip("Playwright is not available in this environment");
+    return;
+  }
+
+  const server = await startStaticServer();
+  const browser = await chromium.launch({ headless: true, executablePath: edgePath });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    await page.goto(server.url, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => {
+      localStorage.clear();
+      localStorage.setItem(
+        "ai-caiduo-accounts-v1",
+        JSON.stringify([{ id: "cmb-credit-card", name: "招商信用卡", openingBalance: 0 }]),
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+
+    await page.setInputFiles("#fileInput", {
+      name: "alipay-balance-no-account.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(
+        "支付宝支付科技有限公司 交易流水证明\n" +
+          "收/支 交易对方 商品说明 收/付款方式 金额 交易订单号 商家订单号 交易时间\n" +
+          "支出 星巴克 星巴克咖啡 支付宝余额 32.50 20260301220014662214274 A0001 2026-03-01 09:30:00",
+      ),
+    });
+    await page.click("#importButton");
+    await page.waitForSelector("#pendingRows tr");
+    assert.equal(await page.locator("#importAccountInput").inputValue(), "__unassigned__");
+
+    await page.click("#confirmImportButton");
+    await page.waitForFunction(() =>
+      (document.querySelector("#importStatus")?.textContent || "").includes("请选择入账账户"),
+    );
+
+    const savedTransactions = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ai-caiduo-transactions-v1") || "[]"),
+    );
+    assert.deepEqual(savedTransactions, []);
+    assert.equal(await page.locator("#pendingRows tr").count(), 1);
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
 test("does not annotate a single unrelated Alipay bank-card transaction", async (t) => {
   if (!existsSync(edgePath)) {
     t.skip("Microsoft Edge is not available in this environment");
