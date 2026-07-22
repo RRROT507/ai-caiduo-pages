@@ -17,7 +17,7 @@ test("provides a WeChat miniprogram project that can be opened in developer tool
   const appConfig = readJson(join(miniprogramRoot, "app.json"));
 
   assert.equal(projectConfig.compileType, "miniprogram");
-  assert.equal(projectConfig.appid, "wx677aec4de990867e");
+  assert.equal(projectConfig.appid, "wxce03f2b9e6bffd6e");
   assert.equal(projectConfig.projectname, "AI财舵");
   assert.equal(projectConfig.miniprogramRoot, "./");
   assert.equal(appConfig.window.navigationBarTitleText, "AI财舵");
